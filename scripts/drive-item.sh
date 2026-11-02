@@ -66,6 +66,31 @@ _halting_labels() {
     _labels | grep -E ':(review|blocked|failed)$' || true
 }
 
+# Epic mode: when the item carries both "epic" and "blocked" labels and has a
+# non-empty native sub-issue list, drive each child in sub-issue order and stop
+# at the first child that halts for a human decision.
+_epic_labels=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" \
+    --jq '[.labels[].name] | join(" ")' 2>/dev/null || echo "")
+if echo "$_epic_labels" | grep -qw "epic" && echo "$_epic_labels" | grep -qw "blocked"; then
+    _sub_issue_numbers=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
+        --paginate --jq '.[].number' 2>/dev/null || echo "")
+    if [[ -n "$_sub_issue_numbers" ]]; then
+        echo "drive-item: #${ISSUE_NUMBER} is an epic; driving children in sub-issue order"
+        while IFS= read -r _child_num; do
+            [[ -z "$_child_num" ]] && continue
+            echo "drive-item: child #${_child_num} of epic #${ISSUE_NUMBER}"
+            _child_rc=0
+            REPO="${REPO}" bash "$0" "${_child_num}" "$@" || _child_rc=$?
+            if [[ $_child_rc -ne 0 ]]; then
+                echo "drive-item: child #${_child_num} halted (exit ${_child_rc}); stopping epic drive."
+                exit $_child_rc
+            fi
+        done <<< "$_sub_issue_numbers"
+        echo "drive-item: all children of epic #${ISSUE_NUMBER} completed."
+        exit 0
+    fi
+fi
+
 tick=0
 while (( tick < MAX_TICKS )); do
     tick=$(( tick + 1 ))
