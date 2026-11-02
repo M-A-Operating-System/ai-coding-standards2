@@ -38,6 +38,18 @@
       "consequences": "pr-reviewer should not flag a script matching this exact shape (a plain `git push`/`git fetch`, no `gh` CLI use, no auth header it builds itself) for a missing env= allowlist on its own; this ADR is the citable waiver, alongside each script's own MI-7 identity-exemption entry in test_sec022_env_allowlists.py's _IDENTITY_EXEMPT. A script that does anything beyond plain git operations over this one credential is not covered and should still build a named allowlist.",
       "approved_by": "agbush2",
       "approved_at": "2026-09-21"
+    },
+    {
+      "id": "ADR-004",
+      "title": "STD-SEC-022 exception: a script invoking itself recursively inherits the ambient environment wholesale, not a named allowlist",
+      "status": "accepted",
+      "authorises_exception_to": ["STD-SEC-022"],
+      "rationale": "STD-SEC-022 requires a named allowlist for an environment built for a subprocess, but explicitly allows 'broad inheritance of the ambient environment by a first-party trusted script' as 'a deliberate, commented decision citing an ADR' (its own acceptance criteria). A script invoking itself (the exact same file, via `bash \"$0\"`) is not constructing a new environment for a different program; the child process runs the identical script, in the identical session, under whatever identity and credentials the parent invocation already received -- there is no second environment to name, because none is being built. ADR-003 does not cover this: it is scoped to scripts whose only need is the git-push credential, and this pattern's recursive child needs the full set of `gh api` calls (`_labels`, `_halting_labels`, the sub-issues lookup) the parent itself already makes, not just a git-push header.",
+      "context": "issue #657 (epic-aware mode for drive-item.sh): the epic-driving loop drives each child sub-issue by recursively invoking the same script (`REPO=\"${REPO}\" bash \"$0\" \"${_child_num}\" \"$@\"`). pr-reviewer flagged this call on PR #663 (cycle 4, finding RV-001) as an unaddressed STD-SEC-022 finding -- full ambient-environment inheritance with no comment and no ADR citation. A comment alone (commit 84618abc) was judged insufficient on the following cycle (RV-001 again): the standard's own acceptance criterion names both a comment and an ADR citation as the deliberate-decision mechanism, and ADR-003 explicitly excludes any script using `gh` CLI beyond plain git operations, which drive-item.sh's entire body does throughout (not just the recursive call).",
+      "decision": "drive-item.sh's recursive self-invocation (`bash \"$0\" \"${_child_num}\" \"$@\"`, driving one epic child) is invoked with no env= override and no named allowlist, inheriting the calling process's full environment. This is not a new instance of the pattern ADR-003 covers (a different script needing only a git-push credential); it is the degenerate case of a script calling itself, where the 'environment to allowlist' and 'the environment already held' are the same thing by construction.",
+      "consequences": "pr-reviewer should not flag a script's own `bash \"$0\" ...\"` (or equivalent self-invocation via the script's own path) as an unaddressed STD-SEC-022 finding on its own; this ADR is the citable waiver for that exact shape. A script invoking a *different* script or program still needs either a named allowlist or its own ADR citing the specific need, per STD-SEC-022 and ADR-003.",
+      "approved_by": "agbush2",
+      "approved_at": "2026-11-02"
     }
   ]
 }

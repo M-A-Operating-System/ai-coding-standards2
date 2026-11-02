@@ -54,6 +54,10 @@ echo "gh $*" >> "${WORK_DIR}/calls.log"
 args="$*"
 
 if [[ "$args" == *"/sub_issues"* ]]; then
+  if [[ -f "${WORK_DIR}/state/sub_issues_fail" ]]; then
+    echo "gh: HTTP 502 (simulated API failure)" >&2
+    exit 1
+  fi
   tr ' ' '\n' <"${WORK_DIR}/state/sub_issues.txt" | grep -v '^$' || true
   exit 0
 fi
@@ -101,6 +105,10 @@ set_issue_labels() {
 set_issue_state() {
   local num="$1" state="$2"
   printf '%s\n' "${state}" >"${WORK_DIR}/state/state_${num}.txt"
+}
+
+fail_sub_issues_lookup() {
+  : >"${WORK_DIR}/state/sub_issues_fail"
 }
 
 run_drive() {
@@ -197,6 +205,32 @@ if grep -q "drive-item: tick 1 on #600" "${WORK_DIR}/out.txt"; then
   pass "epic+blocked with an empty sub-issue list falls through to the single-issue tick loop"
 else
   fail "epic+blocked with an empty sub-issue list should fall through to the single-issue tick loop"
+fi
+
+teardown
+
+# ---------------------------------------------------------------------------
+# R2c: a failed sub_issues API call warns and falls through to the
+# single-issue path, rather than silently behaving as "no children".
+# ---------------------------------------------------------------------------
+sub_issues_list="601"
+setup_epic_mocks
+fail_sub_issues_lookup
+set_issue_labels 600 "epic,blocked
+epic,blocked"
+
+run_drive 600 || true
+
+if grep -q "WARNING: could not fetch sub-issues" "${WORK_DIR}/out.txt"; then
+  pass "a failed sub_issues lookup is reported as a warning, not silently swallowed"
+else
+  fail "a failed sub_issues lookup should be reported as a warning"
+fi
+
+if grep -q "drive-item: tick 1 on #600" "${WORK_DIR}/out.txt"; then
+  pass "a failed sub_issues lookup falls through to the single-issue tick loop"
+else
+  fail "a failed sub_issues lookup should fall through to the single-issue tick loop"
 fi
 
 teardown
