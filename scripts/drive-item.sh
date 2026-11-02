@@ -76,7 +76,7 @@ if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -
     if ! _sub_issue_numbers=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
         --paginate --jq '.[].number' 2>"${_sub_issue_err}"); then
         echo "drive-item: WARNING: could not fetch sub-issues for epic #${ISSUE_NUMBER}" \
-            "(gh api failed: $(cat "${_sub_issue_err}")); falling back to the" \
+            "(gh api failed: $(head -1 "${_sub_issue_err}")); falling back to the" \
             "single-issue path." >&2
         _sub_issue_numbers=""
     fi
@@ -88,6 +88,11 @@ if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -
             if [[ ! "$_child_num" =~ ^[0-9]+$ ]]; then
                 echo "drive-item: WARNING: skipping non-numeric child '${_child_num}'" \
                     "from epic #${ISSUE_NUMBER}'s sub-issue list" >&2
+                continue
+            fi
+            if [[ "$_child_num" == "${ISSUE_NUMBER}" ]]; then
+                echo "drive-item: WARNING: skipping child #${_child_num} -- an epic cannot" \
+                    "be its own sub-issue" >&2
                 continue
             fi
             _child_state=$(gh api "repos/${REPO}/issues/${_child_num}" --jq '.state' 2>/dev/null || echo "")

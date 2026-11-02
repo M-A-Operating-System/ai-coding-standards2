@@ -61,11 +61,17 @@ fi
 num=$(echo "$args" | grep -oE '/issues/[0-9]+' | head -1 | grep -oE '[0-9]+')
 
 # A bare /issues/<N> lookup (no /labels, no /sub_issues) is the child's open/
-# closed state check -- always "open" here, and never consumes a label-
-# sequence read (that would shift the tick-loop's own label reads by one,
-# the same class of bug this epic-mode code was fixed for).
+# closed state check. Defaults to "open" unless a per-issue state file says
+# otherwise, and never consumes a label-sequence read (that would shift the
+# tick-loop's own label reads by one, the same class of bug this epic-mode
+# code was fixed for).
 if [[ "$args" != *"/labels"* ]]; then
-  echo "open"
+  state_file="${WORK_DIR}/state/state_${num}.txt"
+  if [[ -f "$state_file" ]]; then
+    cat "$state_file"
+  else
+    echo "open"
+  fi
   exit 0
 fi
 seq_file="${WORK_DIR}/state/labels_${num}.txt"
@@ -90,6 +96,11 @@ PYEOF
 set_issue_labels() {
   local num="$1" sequence="$2"
   printf '%s\n' "${sequence}" >"${WORK_DIR}/state/labels_${num}.txt"
+}
+
+set_issue_state() {
+  local num="$1" state="$2"
+  printf '%s\n' "${state}" >"${WORK_DIR}/state/state_${num}.txt"
 }
 
 run_drive() {
@@ -221,6 +232,79 @@ if grep -q "/issues/602/labels" "${CALLS_LOG}"; then
   fail "epic drive must not touch the next child (#602) once an earlier child halts"
 else
   pass "epic drive never touches the next child (#602) once an earlier child halts"
+fi
+
+teardown
+
+# ---------------------------------------------------------------------------
+# An already-closed child is skipped entirely -- no recursive drive-item.sh
+# invocation, no labels read for it -- and the epic drive still completes.
+# ---------------------------------------------------------------------------
+sub_issues_list="601 602"
+setup_epic_mocks
+set_issue_labels 600 "epic,blocked"
+set_issue_state 601 "closed"
+set_issue_labels 602 "child602:complete
+child602:complete"
+
+rc=0
+run_drive 600 || rc=$?
+
+if [[ $rc -eq 0 ]]; then
+  pass "epic drive exits 0 when a closed child is skipped and the rest settle"
+else
+  fail "epic drive should exit 0 when a closed child is skipped and the rest settle; got rc=${rc}"
+fi
+
+if grep -q "child #601 already closed; skipping" "${WORK_DIR}/out.txt"; then
+  pass "a closed child is reported as skipped"
+else
+  fail "a closed child should be reported as skipped"
+fi
+
+if grep -q "/issues/601/labels" "${CALLS_LOG}"; then
+  fail "a closed child must never be recursively driven (no /issues/601/labels read)"
+else
+  pass "a closed child is never recursively driven (no /issues/601/labels read)"
+fi
+
+if grep -q "child #602 of epic #600" "${WORK_DIR}/out.txt"; then
+  pass "the next child after a closed one is still driven"
+else
+  fail "the next child after a closed one should still be driven"
+fi
+
+teardown
+
+# ---------------------------------------------------------------------------
+# An epic that (incorrectly) lists itself as its own sub-issue skips that
+# self-reference rather than recursing into itself.
+# ---------------------------------------------------------------------------
+sub_issues_list="600 601"
+setup_epic_mocks
+set_issue_labels 600 "epic,blocked"
+set_issue_labels 601 "child601:complete
+child601:complete"
+
+rc=0
+run_drive 600 || rc=$?
+
+if [[ $rc -eq 0 ]]; then
+  pass "epic drive exits 0 when its own number is skipped from a self-referencing sub-issue list"
+else
+  fail "epic drive should exit 0 when its own number is skipped; got rc=${rc}"
+fi
+
+if grep -q "epic cannot.*be its own sub-issue" "${WORK_DIR}/out.txt"; then
+  pass "a self-referencing sub-issue entry is reported as skipped"
+else
+  fail "a self-referencing sub-issue entry should be reported as skipped"
+fi
+
+if grep -q "child #601 of epic #600" "${WORK_DIR}/out.txt"; then
+  pass "the real child is still driven alongside a skipped self-reference"
+else
+  fail "the real child should still be driven alongside a skipped self-reference"
 fi
 
 teardown
