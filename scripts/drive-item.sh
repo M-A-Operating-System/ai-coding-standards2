@@ -66,12 +66,12 @@ _halting_labels() {
     _labels | grep -E ':(review|blocked|failed)$' || true
 }
 
+_initial_labels=$(_labels)
+
 # Epic mode: when the item carries both "epic" and "blocked" labels and has a
 # non-empty native sub-issue list, drive each child in sub-issue order and stop
 # at the first child that halts for a human decision.
-_epic_labels=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" \
-    --jq '[.labels[].name] | join(" ")' 2>/dev/null || echo "")
-if echo "$_epic_labels" | grep -qw "epic" && echo "$_epic_labels" | grep -qw "blocked"; then
+if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -qx "blocked"; then
     _sub_issue_numbers=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
         --paginate --jq '.[].number' 2>/dev/null || echo "")
     if [[ -n "$_sub_issue_numbers" ]]; then
@@ -92,9 +92,15 @@ if echo "$_epic_labels" | grep -qw "epic" && echo "$_epic_labels" | grep -qw "bl
 fi
 
 tick=0
+_pending_before="${_initial_labels}"
 while (( tick < MAX_TICKS )); do
     tick=$(( tick + 1 ))
-    before=$(_labels)
+    if [[ -n "${_pending_before+x}" ]]; then
+        before="${_pending_before}"
+        unset _pending_before
+    else
+        before=$(_labels)
+    fi
 
     echo "drive-item: tick ${tick} on #${ISSUE_NUMBER}"
     # No shell `timeout` around this: agent-heavy steps legitimately take

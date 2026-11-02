@@ -36,7 +36,7 @@ class TestMaosRunDrivesEachChildOfAnEpicInSubIssueOrder:
 
     def test_blocked_label_is_checked(self):
         content = _content()
-        assert 'grep -qw "blocked"' in content or "grep -qw 'blocked'" in content, (
+        assert 'grep -qx "blocked"' in content or "grep -qx 'blocked'" in content, (
             "drive-item.sh must check for the 'blocked' label as part of epic detection"
         )
 
