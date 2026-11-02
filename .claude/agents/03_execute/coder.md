@@ -299,11 +299,16 @@ running `git log`, `git status`, `git diff`, tests, or making any conclusion
 about whether work is required.
 
 Read the latest pr-reviewer artifact and current human review state from the
-consuming/project repo:
+consuming/project repo. This file is reused verbatim as 04_evaluate/coder for
+the epic-completion flow (a symlink, same prompt), whose review feedback is
+posted by 04_evaluate/epic-pr-reviewer (itself a symlink to
+03_execute/pr-reviewer.md) -- match either provenance tag, or a Mode B run in
+that flow finds no review artifact at all and silently falls through to "no
+diff, nothing to do" instead of reading the findings that triggered it:
 
 ```bash
 LATEST_REVIEW=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty')
+  | jq -rs '[.[] | select(.body | test("ai-agile/artefact/v1 by (03_execute/pr-reviewer|04_evaluate/epic-pr-reviewer)")) | .body] | last // empty')
 
 HUMAN_BLOCK_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \
   | jq -rs '
