@@ -72,12 +72,29 @@ _initial_labels=$(_labels)
 # non-empty native sub-issue list, drive each child in sub-issue order and stop
 # at the first child that halts for a human decision.
 if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -qx "blocked"; then
-    _sub_issue_numbers=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
-        --paginate --jq '.[].number' 2>/dev/null || echo "")
+    _sub_issue_err=$(mktemp)
+    if ! _sub_issue_numbers=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
+        --paginate --jq '.[].number' 2>"${_sub_issue_err}"); then
+        echo "drive-item: WARNING: could not fetch sub-issues for epic #${ISSUE_NUMBER}" \
+            "(gh api failed: $(cat "${_sub_issue_err}")); falling back to the" \
+            "single-issue path." >&2
+        _sub_issue_numbers=""
+    fi
+    rm -f "${_sub_issue_err}"
     if [[ -n "$_sub_issue_numbers" ]]; then
         echo "drive-item: #${ISSUE_NUMBER} is an epic; driving children in sub-issue order"
         while IFS= read -r _child_num; do
             [[ -z "$_child_num" ]] && continue
+            if [[ ! "$_child_num" =~ ^[0-9]+$ ]]; then
+                echo "drive-item: WARNING: skipping non-numeric child '${_child_num}'" \
+                    "from epic #${ISSUE_NUMBER}'s sub-issue list" >&2
+                continue
+            fi
+            _child_state=$(gh api "repos/${REPO}/issues/${_child_num}" --jq '.state' 2>/dev/null || echo "")
+            if [[ "$_child_state" == "closed" ]]; then
+                echo "drive-item: child #${_child_num} already closed; skipping."
+                continue
+            fi
             echo "drive-item: child #${_child_num} of epic #${ISSUE_NUMBER}"
             _child_rc=0
             REPO="${REPO}" bash "$0" "${_child_num}" "$@" || _child_rc=$?
