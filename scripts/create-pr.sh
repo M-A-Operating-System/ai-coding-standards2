@@ -153,14 +153,23 @@ else
     2>/dev/null || echo "main"
   )
   # A flow may declare its own base (e.g. a shared integration branch for a
-  # decomposed parent). Fall back to the default branch when it declares none,
-  # or when the branch it names does not exist.
+  # decomposed parent). Falling back to the default branch here when the
+  # declared branch is simply missing (rather than failing) would silently
+  # open the PR against the wrong base, bypassing whatever review the
+  # declared base exists to gate (issue #609's epic-completion finding
+  # RV-002) -- a declared base that doesn't exist is a lifecycle-ordering
+  # bug (e.g. sizer not yet having created the parent's integration branch),
+  # and must surface as a visible failure, not a quiet substitution.
   if [[ -n "${BASE_BRANCH}" ]]; then
     if git ls-remote --exit-code --heads origin "${BASE_BRANCH}" &>/dev/null; then
       DEFAULT_BRANCH="${BASE_BRANCH}"
       echo "Using this flow's declared base branch: ${DEFAULT_BRANCH}"
     else
-      echo "Declared base branch '${BASE_BRANCH}' does not exist -- falling back to ${DEFAULT_BRANCH}." >&2
+      echo "ERROR: declared base branch '${BASE_BRANCH}' does not exist on origin." >&2
+      echo "       This flow declared ${BASE_BRANCH} as its base (naming.base), but" >&2
+      echo "       it has not been created yet -- the parent epic's integration" >&2
+      echo "       branch should exist before any sub-issue's create-pr step runs." >&2
+      exit 1
     fi
   fi
   echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"

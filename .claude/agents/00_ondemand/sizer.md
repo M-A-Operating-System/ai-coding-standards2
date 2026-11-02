@@ -377,6 +377,49 @@ SUB_NODE_ID=$(gh issue view "$SUB_ISSUE_N" --repo "$REPO" \
   --json id --jq '.id')
 ```
 
+### 4c2 — Create the parent's integration branch
+
+Each sub-issue's own `create-pr` step declares `issue-${ISSUE_NUMBER}` (this
+parent's number) as its base branch (pipeline.json's `standard-delivery`
+flow, `naming.base: "issue-{parent_number}"`) -- the shared branch the
+epic's own `epic-completion` flow later diffs against `main` for its one
+accumulated-diff review. If that branch does not exist yet when the first
+sub-issue's `create-pr` runs, it falls back to `main` and the sub-issue's
+work lands there directly, with no accumulated-diff review ever happening on
+the epic (issue #609, RV-001/RV-002) -- `create-pr.sh` now fails loudly on a
+missing declared base rather than silently substituting, so this branch
+**must** exist before any sub-issue pipeline can proceed past `create-pr`.
+
+Create it now, via the REST API directly (no `git` CLI, no commit --
+`expected_effect.commits` for this step is `false`): a plain ref pointing at
+the current tip of the default branch.
+
+```bash
+DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch')
+DEFAULT_SHA=$(gh api "repos/${REPO}/commits/${DEFAULT_BRANCH}" --jq '.sha')
+
+# Idempotent: Step 5 re-runs this agent after human review, by which point
+# this branch already exists -- skip rather than erroring on "already exists".
+BRANCH_EXISTS=$(gh api "repos/${REPO}/git/refs/heads/issue-${ISSUE_NUMBER}" \
+  --jq '.ref' 2>/dev/null || echo "")
+
+if [[ -z "$BRANCH_EXISTS" ]]; then
+  gh api \
+    --method POST \
+    "/repos/${REPO}/git/refs" \
+    -f ref="refs/heads/issue-${ISSUE_NUMBER}" \
+    -f sha="${DEFAULT_SHA}"
+  echo "Created integration branch issue-${ISSUE_NUMBER} from ${DEFAULT_BRANCH}@${DEFAULT_SHA}"
+else
+  echo "Integration branch issue-${ISSUE_NUMBER} already exists -- skipping."
+fi
+```
+
+If this fails, do not continue to Step 4d: write `outcome: "blocked"` with a
+summary naming the API error, the same way Step 0b blocks on an unconfirmable
+branch/PR state. A decomposition whose sub-issues cannot land anywhere safe
+is not a completed decomposition.
+
 ### 4d — Label the parent as epic and blocked
 
 Record a `label_requests` entry to add `epic` and `blocked` to the parent
