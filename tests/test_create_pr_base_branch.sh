@@ -44,7 +44,10 @@ setup_mocks() {
   : >"${CALLS_LOG}"
 
   git init -q "${WORK_DIR}/repo"
-  (cd "${WORK_DIR}/repo" && git commit -q --allow-empty -m "init")
+  (cd "${WORK_DIR}/repo" \
+    && git config user.email "test@example.com" \
+    && git config user.name "Test" \
+    && git commit -q --allow-empty -m "init")
 
   cat >"${MOCK_DIR}/git" <<GITEOF
 #!/usr/bin/env bash
