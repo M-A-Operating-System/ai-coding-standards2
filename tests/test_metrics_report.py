@@ -30,7 +30,7 @@ from metrics_report import (
     METRICS_AGGREGATOR_ID,
     ROWS_PER_PAGE,
     WINDOW_12MO_WEEKS,
-    WINDOW_4WK_DAYS,
+    WINDOW_2MO_DAYS,
     _BAR_AGENT,
     _LINE,
     _infer_ylabel,
@@ -221,7 +221,7 @@ class TestHtmlLayout:
         now = _utc("2026-10-06T00:00:00Z")
         descs = [
             {"field": f"f{i}", "title": f"T{i}", "ylabel": "count",
-             "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
+             "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
             for i in range(4)
         ]
         pairs = [self._fake_pair() for _ in descs]
@@ -231,7 +231,7 @@ class TestHtmlLayout:
     def test_five_rows_spill_onto_second_page(self):
         descs = [
             {"field": f"f{i}", "title": f"T{i}", "ylabel": "count",
-             "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
+             "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
             for i in range(5)
         ]
         pairs = [self._fake_pair() for _ in descs]
@@ -241,7 +241,7 @@ class TestHtmlLayout:
     def test_eight_rows_fill_exactly_two_pages(self):
         descs = [
             {"field": f"f{i}", "title": f"T{i}", "ylabel": "count",
-             "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
+             "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
             for i in range(ROWS_PER_PAGE * 2)
         ]
         pairs = [self._fake_pair() for _ in descs]
@@ -260,7 +260,7 @@ class TestHtmlLayout:
 
     def test_each_row_has_two_images(self):
         desc = {"field": "f", "title": "T", "ylabel": "count",
-                "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
+                "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
         html = build_html([desc], [self._fake_pair()])
         assert html.count("<img ") == 2
 
@@ -291,13 +291,13 @@ class TestChartTypes:
         assert cost_agent is not None
         assert cost_agent["chart_type"] == _BAR_AGENT
 
-    def test_line_descriptor_has_12mo_and_4wk_data(self):
+    def test_line_descriptor_has_12mo_and_2mo_data(self):
         now = _utc("2026-10-06T00:00:00Z")
         records = [_blended(_week_ts(now, 2), count_issues=5)]
         descs = prepare_report_data(records, now)
         throughput = next(d for d in descs if d["field"] == "count_issues")
         assert "data_12mo" in throughput
-        assert "data_4wk" in throughput
+        assert "data_2mo" in throughput
 
     def test_bar_agent_descriptor_has_series_and_agents(self):
         now = _utc("2026-10-06T00:00:00Z")
@@ -322,10 +322,10 @@ class TestChartTypes:
         # Both week records fall within 12-month window -- both appear on the left.
         assert len(throughput["data_12mo"]) == 2
 
-    def test_right_chart_sources_day_rows_for_4wk(self):
+    def test_right_chart_sources_day_rows_for_2mo(self):
         now = _utc("2026-10-06T00:00:00Z")
         day_ts_recent = (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        day_ts_old = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        day_ts_old = (now - timedelta(days=70)).strftime("%Y-%m-%dT%H:%M:%SZ")
         records = [
             _blended_day(day_ts_recent, count_issues=3),
             _blended_day(day_ts_old, count_issues=1),
@@ -333,8 +333,8 @@ class TestChartTypes:
         descs = prepare_report_data(records, now)
         throughput = next((d for d in descs if d["field"] == "count_issues"), None)
         assert throughput is not None
-        # Only the 3-days-ago record falls within the 4-week window.
-        assert len(throughput["data_4wk"]) == 1
+        # Only the 3-days-ago record falls within the 2-month window.
+        assert len(throughput["data_2mo"]) == 1
 
     def test_week_rows_do_not_appear_in_right_chart(self):
         now = _utc("2026-10-06T00:00:00Z")
@@ -342,8 +342,8 @@ class TestChartTypes:
         records = [_blended(week_ts, count_issues=5)]
         descs = prepare_report_data(records, now)
         throughput = next(d for d in descs if d["field"] == "count_issues")
-        # Week rows feed only the left chart; right chart (data_4wk) uses day rows.
-        assert throughput["data_4wk"] == []
+        # Week rows feed only the left chart; right chart (data_2mo) uses day rows.
+        assert throughput["data_2mo"] == []
 
     def test_day_rows_do_not_appear_in_left_chart(self):
         now = _utc("2026-10-06T00:00:00Z")
@@ -478,17 +478,17 @@ class TestShortRange:
         assert len(throughput["data_12mo"]) == 3
         assert len(throughput["data_12mo"]) > 0
 
-    def test_fewer_than_4wk_day_rows_renders_available_range(self):
+    def test_fewer_than_2mo_day_rows_renders_available_range(self):
         now = _utc("2026-10-06T00:00:00Z")
-        # Only one day record, 35 days ago -- outside the 4-week (28-day) window,
+        # Only one day record, 70 days ago -- outside the 2-month (60-day) window,
         # so the fallback-to-available-range path is actually exercised.
-        day_ts = (now - timedelta(days=35)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        day_ts = (now - timedelta(days=70)).strftime("%Y-%m-%dT%H:%M:%SZ")
         records = [_blended_day(day_ts, count_issues=7)]
         descs = prepare_report_data(records, now)
         throughput = next((d for d in descs if d["field"] == "count_issues"), None)
         assert throughput is not None
-        # When no data falls in 4wk window, fallback to full available day range.
-        assert len(throughput["data_4wk"]) >= 1
+        # When no data falls in 2mo window, fallback to full available day range.
+        assert len(throughput["data_2mo"]) >= 1
 
     def test_no_day_rows_right_chart_empty_without_error(self):
         now = _utc("2026-10-06T00:00:00Z")
@@ -496,17 +496,17 @@ class TestShortRange:
         records = [_blended(_week_ts(now, 1), count_issues=5)]
         descs = prepare_report_data(records, now)
         throughput = next(d for d in descs if d["field"] == "count_issues")
-        assert throughput["data_4wk"] == []
+        assert throughput["data_2mo"] == []
 
     def test_bar_agent_falls_back_to_available_range_when_all_day_data_outside_window(self):
         """issue #547 PR review RV-001: _render_bar_agent_pair must fall back
         to the full available range when every series_day point pre-dates
-        cutoff_4wk, the same short-range behavior _build_line already applies
+        cutoff_2mo, the same short-range behavior _build_line already applies
         to the line-chart rows -- not silently render an empty bar chart."""
         import metrics_report as mr
 
         now = _utc("2026-10-06T00:00:00Z")
-        old_dt = now - timedelta(days=35)  # outside the 4-week (28-day) window
+        old_dt = now - timedelta(days=70)  # outside the 2-month (60-day) window
         desc = {
             "field": "sum_cost_usd",
             "title": "Cost by agent",
@@ -516,7 +516,7 @@ class TestShortRange:
             "series_week": {"03_execute/coder": [(now, 5.0)]},
             "series_day": {"03_execute/coder": [(old_dt, 3.0)]},
             "cutoff_12mo": now - timedelta(weeks=52),
-            "cutoff_4wk": now - timedelta(days=28),
+            "cutoff_2mo": now - timedelta(days=60),
         }
 
         bar_calls = []
@@ -540,10 +540,10 @@ class TestShortRange:
         }), patch.object(mr, "_figure_to_b64", return_value="x"):
             mr._render_bar_agent_pair(desc)
 
-        # Both the 12mo window (real data) and the 4wk window (fallback since
-        # the only day point is outside cutoff_4wk) must have drawn bars.
+        # Both the 12mo window (real data) and the 2mo window (fallback since
+        # the only day point is outside cutoff_2mo) must have drawn bars.
         assert len(bar_calls) == 2
-        # The 4wk window's bar call used the fallback total (3.0), not an
+        # The 2mo window's bar call used the fallback total (3.0), not an
         # empty bars call.
         assert mock_ax.bar.call_args_list[1].args[1] == (3.0,)
 
@@ -565,15 +565,15 @@ class TestShortRange:
     def test_build_line_with_no_data_returns_none(self):
         now = _utc("2026-10-06T00:00:00Z")
         cutoff_12mo = now - timedelta(weeks=WINDOW_12MO_WEEKS)
-        cutoff_4wk = now - timedelta(days=WINDOW_4WK_DAYS)
-        result = _build_line("count_issues", "T", "count", [], [], cutoff_12mo, cutoff_4wk)
+        cutoff_2mo = now - timedelta(days=WINDOW_2MO_DAYS)
+        result = _build_line("count_issues", "T", "count", [], [], cutoff_12mo, cutoff_2mo)
         assert result is None
 
     def test_build_bar_agent_with_no_data_returns_none(self):
         now = _utc("2026-10-06T00:00:00Z")
         cutoff_12mo = now - timedelta(weeks=WINDOW_12MO_WEEKS)
-        cutoff_4wk = now - timedelta(days=WINDOW_4WK_DAYS)
-        result = _build_bar_agent("sum_cost_usd", "T", "USD", [], [], cutoff_12mo, cutoff_4wk)
+        cutoff_2mo = now - timedelta(days=WINDOW_2MO_DAYS)
+        result = _build_bar_agent("sum_cost_usd", "T", "USD", [], [], cutoff_12mo, cutoff_2mo)
         assert result is None
 
 
