@@ -7356,7 +7356,7 @@ def _load_adr_records() -> list[dict]:
 def _load_standard_records() -> dict[str, dict]:
     """standards/*.json's own records, keyed by id -- adr_exception_index
     checks a cited standard's own adr_overridable flag against these before
-    honoring an ADR's authorises_exception_to claim (docs/product/standards/
+    honoring an ADR's authorises_exception_to claim (docs/product/standards_taxonomy/
     14-standards.md: "adr_overridable: false -- always blocks; no exception
     is possible"). A missing directory means no standards exist yet; that is
     not a failure (mirrors _load_adr_records)."""

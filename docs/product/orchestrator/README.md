@@ -81,7 +81,7 @@ rest as reference you consult when a question comes up.
 |---|---|---|
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
-| — | [Standards and Taxonomy](../standards/README.md) | Shared rules and vocabulary for people and agents, including architecture decisions and permitted exceptions |
+| — | [Standards and Taxonomy](../standards_taxonomy/README.md) | Shared rules and vocabulary for people and agents, including architecture decisions and permitted exceptions |
 
 ### Planning & status
 

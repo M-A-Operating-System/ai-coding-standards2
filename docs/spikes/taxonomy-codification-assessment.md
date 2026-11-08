@@ -6,7 +6,7 @@
 **Date:** 2026-08-20
 **Covers:** taxonomy v0.2.0 (as merged at `70dc4ab`), the v0.3.0 update, and the v0.3.1 merge in
 [#351](https://github.com/M-A-Operating-System/ai-coding-standards2/pull/351)
-**Source files reviewed:** all files under `taxonomy/`, the 11 documents now under `docs/product/standards/taxonomy/`,
+**Source files reviewed:** all files under `taxonomy/`, the 11 documents now under `docs/product/standards_taxonomy/taxonomy/`,
 `pipeline/validate_taxonomy.py`
 **Visual versions:** [Taxonomy Schedule Review](https://claude.ai/code/artifact/14489c71-b5fb-49c1-b95c-9bd37fd37467) ·
 [What the Field Settled](https://claude.ai/code/artifact/c8931354-d75c-4022-94fb-87fdbfeb310b)
@@ -464,7 +464,7 @@ adopted; only the depth half of the original proposal is rejected.
 
 > **Decision — variable-depth path is rejected; facets are adopted as an orthogonal mechanism.**
 > Paths keep four parts, always. The reasoning is recorded in
-> [`03-model.md`](../product/standards/taxonomy/03-model.md): fixed arity lets a consumer parse a path without
+> [`03-model.md`](../product/standards_taxonomy/taxonomy/03-model.md): fixed arity lets a consumer parse a path without
 > a lookup, validate it by position, and rely on every path carrying the same information. Variable
 > depth moves that cost onto every consumer and leaves the CI positional checks nothing fixed to
 > check against.
@@ -501,7 +501,7 @@ its identity when it moves between domains. Stored references — in standards, 
 rules, mappings, and classifications against real systems — use the identifier. The resolver accepts
 either, and former paths are retained so a stale path resolves with a warning rather than failing.
 
-This is recorded as [TX-5](../product/standards/taxonomy/02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not).
+This is recorded as [TX-5](../product/standards_taxonomy/taxonomy/02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not).
 
 **Why it is the prerequisite.** Three of the recommendations here are structural repairs: R-15 rewrites
 46 padded classes, R-12 rebases the concepts families on ISO/IEC 25010, R-2/R-10 reorganises what the

@@ -54,7 +54,7 @@ against a standards category. The machine-readable source is
 [`standards/personas.json`](../../../standards/personas.json); the
 System actor's qualifying test lives there as data, not prose duplicated
 in a prompt (see
-[`14-standards.md`](../standards/14-standards.md#personas-not-a-category-a-closed-vocabulary)).
+[`14-standards.md`](../standards_taxonomy/14-standards.md#personas-not-a-category-a-closed-vocabulary)).
 
 ---
 
