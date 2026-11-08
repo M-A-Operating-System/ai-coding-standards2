@@ -1,5 +1,7 @@
 # AI Agile — Product Documentation
 
+[Product documentation](../README.md)
+
 **AI Agile** is a complete, self-contained agentic framework for a
 product-led software development lifecycle, delivered as a single git
 submodule. Specialised AI agents move every change from a single GitHub
@@ -7,9 +9,9 @@ issue through to shipped, tested, documented code — with humans approving at
 well-defined gates. Everything runs on GitHub: issues, labels, comments,
 branches, and PRs. There is no sidecar database, no separate dashboard, and
 no hidden state. A consuming repo drops the submodule in and inherits the
-whole lifecycle; this repo stays the sole definition of every agent,
-pipeline stage, gate, and standard. The only thing a project owns locally is
-its ADRs — the exceptions it records against the centrally-defined standards.
+whole lifecycle; this repo supplies the agents, the default pipeline, and the
+standards. A project can define its own pipeline and record its architecture
+decisions and permitted exceptions in its local ADRs.
 
 ---
 
@@ -79,7 +81,7 @@ rest as reference you consult when a question comes up.
 |---|---|---|
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
-| — | [Standards](../standards/14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping -- lives in its own `docs/product/standards/` area, not this one; standards enforcement is agent behaviour, not orchestrator mechanism |
+| — | [Standards and Taxonomy](../standards/README.md) | Shared rules and vocabulary for people and agents, including architecture decisions and permitted exceptions |
 
 ### Planning & status
 

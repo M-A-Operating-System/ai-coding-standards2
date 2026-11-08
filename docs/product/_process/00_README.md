@@ -1,5 +1,7 @@
 # AI-First Product Engineering Process
 
+[Product documentation](../README.md)
+
 **Version:** 1.0  
 **Status:** Draft Process Standard  
 **Folder:** `docs/product/_process`

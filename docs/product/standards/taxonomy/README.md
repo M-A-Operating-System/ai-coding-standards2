@@ -1,12 +1,14 @@
 # Taxonomy — Product Documentation
 
+[Standards and Taxonomy](../README.md)
+
 **The Taxonomy** is the canonical semantic vocabulary of the AI-agile
 delivery process. It gives intended architecture, discovered infrastructure,
 source code, standards, decisions, and reusable assets one shared set of
 identifiers, so a claim made in any of them resolves against the same
 meaning. Its value is not in modelling every engineering detail; it is in
 letting every other part of the system resolve only the context it needs.
-The vocabulary itself lives in [`taxonomy/`](../../../taxonomy/) as
+The vocabulary itself lives in [`taxonomy/`](../../../../taxonomy/) as
 versioned JSON, governed through pull requests and enforced in CI.
 
 ---
@@ -93,9 +95,9 @@ rest as reference you consult when a question comes up.
 
 ## Related
 
-- [`taxonomy/README.md`](../../../taxonomy/README.md) — structure and
+- [`taxonomy/README.md`](../../../../taxonomy/README.md) — structure and
   authoring conventions for the JSON itself.
-- [`14-standards.md`](../standards/14-standards.md) — the two-tier
-  standards system whose applicability this vocabulary is designed to target.
-- [`05_product-architecture-and-technical-architecture.md`](../_process/05_product-architecture-and-technical-architecture.md)
+- [`14-standards.md`](../14-standards.md) — the shared standards this vocabulary
+  helps apply to design and implementation.
+- [`05_product-architecture-and-technical-architecture.md`](../../_process/05_product-architecture-and-technical-architecture.md)
   — the architecture narrative this documentation sits within.

@@ -332,8 +332,14 @@ repos.
 
 ## Documentation
 
-- [`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md) — the full design index and reading order
-- [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo, platform behaviour, path resolution
+The [product documentation](docs/product/README.md) is organized into three areas.
+
+- [Orchestrator](docs/product/orchestrator/README.md) explains how the framework
+  runs and controls workflows, including setup and configuration.
+- [Process](docs/product/_process/00_README.md) follows product work from intent
+  and design through implementation, verification, and release.
+- [Standards and Taxonomy](docs/product/standards/README.md) covers the rules
+  and shared vocabulary that people and agents use to govern design and code.
 
 ## Contributing
 
