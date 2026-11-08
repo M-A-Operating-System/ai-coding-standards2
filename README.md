@@ -1,52 +1,64 @@
 # AI Agile
 
-**AI Agile is a complete, self-contained agentic framework for a
-product-led software development lifecycle — dropped into any project repo
-as a single git submodule.** Specialised AI agents move every change from a
-GitHub issue through to shipped, tested, documented code, with humans
-approving at well-defined gates rather than performing the work.
+AI Agile combines a deterministic orchestration framework, a ready-to-run
+product-first delivery pipeline, and a shared set of architecture standards
+and taxonomies. Teams install all three together as a single Git submodule.
 
-One submodule brings the whole SDLC: the pipeline graph, the deterministic
-orchestrator, every agent, the human gates, and the machine-readable
-standards. The consuming repo adds only a thin workflow file and two
-secrets — it does not define, fork, or maintain the framework's moving
-parts. This repo is the single, authoritative source for the pipeline, the
-orchestrator, the agents, the gates, and the standards. Standards are
-defined centrally here; the only thing a project owns locally is its **ADRs**
-— the architecture decisions and standard-exceptions it records in its own
-`adrs/adrs.json`, seeded once and never overwritten (see
-[14-standards.md](docs/product/standards/14-standards.md)).
+## 1. Deterministic agentic orchestration framework
 
-Software teams spend a disproportionate share of their time on the
-connective tissue around code: writing PRDs, translating them into designs,
-deciding what to test, reviewing for standards, writing release notes.
-These activities are valuable but repetitive — and they are where most
-quality issues originate. AI Agile gives each of those activities to a
-dedicated agent, keeps every artefact on GitHub (issues, labels, comments,
-branches, PRs — no sidecar database, no hidden state), and reserves human
-time for the decisions only humans can make.
+A GitHub issue is the original work request. The framework can move that
+request through a predefined sequence of scripted and agentic steps. For a
+code change, the same issue stays linked to the pull request used to review
+and ship the change.
 
-How it works, in one paragraph: every change starts as a GitHub issue. A
-**deterministic Python orchestrator** (no LLM in the routing path) reads
-the status labels on that issue, consults the dependency graph in
-`pipeline/pipeline.json`, and invokes whichever agent is eligible next.
-Each agent does one job — draft a PRD, write the code, review the PR —
-then marks itself complete or asks for human review. Humans approve at
-**gates** by applying a label. Every transition is auditable, every state
-is resumable, and code is held to machine-readable **standards**.
+The Python orchestrator reads the work item's state in GitHub and the
+dependencies in the flow definition to decide what can run next. Scripts
+handle work that can be expressed as rules, such as opening a pull request
+or checking CI status. Agents handle work that requires inference or
+generates an artefact, such as drafting a design or reviewing a code change.
+Human approval gates, tool permissions, execution budgets, and retry limits
+control how work progresses. GitHub records the work and its approvals so
+teams can trace a change back to the original request.
 
-This repo (`ai-coding-standards2`) **is** the framework — the pipeline, the
-orchestrator, the agents, and the standards in one place. It is **designed
-to be added as a git submodule** to the project repos that consume it, and
-it remains the sole definition of every agent and pipeline stage: consuming
-repos inherit the framework wholesale and never redefine it locally (see
-[Onboarding → sole source of agents](docs/product/orchestrator/16-onboarding.md#this-submodule-is-the-sole-source-of-agents)).
+See the [orchestrator documentation](docs/product/orchestrator/README.md) and
+the [flow definitions](pipeline/pipeline.json).
 
-The full design is in [`docs/product/orchestrator/`](docs/product/orchestrator/README.md) —
-start with its 60-second summary and reading order.
+## 2. Default product-first pipeline
 
-The authoritative list of agents and their dependencies is
-`pipeline/pipeline.json`.
+AI Agile ships with a product-first delivery flow, including preconfigured
+agents, scripted steps, and their dependencies. The flow starts by defining
+what the product should do. A product stakeholder approves the requirements
+and testable acceptance criteria before implementation starts.
+
+In the standard design-to-build flow, the approved product design is published
+in its own pull request before the code branch is created. The coding agent
+then works from that version of the design. The acceptance criteria guide
+testing, and CI and code review check the implementation before the code
+pull request advances to human review and merge.
+
+A consuming repository can replace the default pipeline with its own `pipeline/pipeline.json`, defining the sequence and dependencies for its project.
+
+See the [product delivery lifecycle](docs/product/orchestrator/lifecycle.md).
+
+## 3. Codified architecture standards and taxonomies
+
+The repository gives people and agents the same reference for design and
+architecture governance. The [architecture standards](standards/architecture.json)
+define rules for areas such as reuse, API boundaries, and error handling.
+Related standards cover security, testing, data, user experience, process,
+and documentation. Taxonomies define the vocabulary teams use in the
+workflow, including [product personas](standards/personas.json) and
+[issue classifications](docs/product/orchestrator/lifecycle.md#issue-classification-taxonomy).
+
+Standards are defined centrally in machine-readable JSON and referenced by
+stable IDs. Authors and reviewers can cite those IDs in design decisions and
+pull request findings. Each project records its architectural decisions and
+permitted exceptions in its own `adrs/adrs.json`. See the
+[standards and ADR guide](docs/product/standards/14-standards.md).
+
+This repository is the source for the orchestrator, flow definitions, agents,
+and standards. See [onboarding](docs/product/orchestrator/16-onboarding.md)
+for how a consuming repository uses them through the submodule.
 
 ---
 
@@ -63,10 +75,9 @@ These instructions are for **teams adding this pipeline to their own
 project repo** as a submodule. If you want to contribute to AI Agile
 itself, see [Contributing](#contributing) below.
 
-The submodule provides the pipeline graph, the orchestrator, the agent
-prompts, and the validators. Your repo provides a thin GitHub Actions
-workflow, the `ANTHROPIC_API_KEY` secret, and (optionally) project-specific
-standards.
+The consuming repository provides the GitHub Actions wrapper workflows and
+the two secrets listed below. Project-specific architecture decisions and
+permitted exceptions are recorded in the local ADR file.
 
 ### 1. Add the submodule
 
