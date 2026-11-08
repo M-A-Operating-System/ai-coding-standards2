@@ -36,7 +36,16 @@ then works from that version of the design. The acceptance criteria guide
 testing, and CI and code review check the implementation before the code
 pull request advances to human review and merge.
 
-See the [product delivery lifecycle](docs/product/orchestrator/lifecycle.md).
+A consuming repository can create and maintain its own `pipeline/pipeline.json`
+at the repository root, outside the submodule. It can define its own flows,
+choose which steps run and in what order, and set their dependencies using
+the framework's agents and scripts. The local file is versioned with the
+project and replaces the shipped configuration in full. The orchestrator
+validates it against the same schema and uses the shipped default when the
+repository has no local file.
+
+See the [product delivery lifecycle](docs/product/orchestrator/lifecycle.md)
+and [how to define your own flows](docs/product/orchestrator/16-onboarding.md#a-repositorys-own-flows).
 
 ## 3. Codified architecture standards and taxonomies
 
@@ -54,8 +63,8 @@ pull request findings. Each project records its architectural decisions and
 permitted exceptions in its own `adrs/adrs.json`. See the
 [standards and ADR guide](docs/product/standards/14-standards.md).
 
-This repository is the source for the orchestrator, flow definitions, agents,
-and standards. See [onboarding](docs/product/orchestrator/16-onboarding.md)
+This repository is the source for the orchestrator, default flow definitions,
+agents, and standards. See [onboarding](docs/product/orchestrator/16-onboarding.md)
 for how a consuming repository uses them through the submodule.
 
 ---
@@ -236,7 +245,9 @@ After a submodule bump, **most things just work** because the
 orchestrator reads them straight from the submodule:
 
 - Agent prompts (`.claude/agents/{phase}/*.md`) — read from the submodule
-- `pipeline.json`, `status.sh`, validators — read from the submodule
+- The default `pipeline.json` applies when the project has no local definition.
+  A local definition stays in the consuming repository across submodule updates.
+- `status.sh` and validators — read from the submodule
 - Schema and CI checks — referenced by their submodule paths
 
 The `.claude` and `standards` folders are **whole-folder symlinks** into the
