@@ -2,17 +2,20 @@
 
 **Version:** 1.0  
 **Status:** Draft Process Standard  
-**Folder:** `docs/_process`
+**Folder:** `docs/product/_process`
 
 ---
 
 ## Purpose
 
-This document defines the foundational operating model for AI-first product engineering.
+This standard defines the operating model for our [Product-First pipeline](00_README.md).
+Work starts with a product design that defines the intended capabilities and
+a roadmap that sets the order in which we intend to deliver them.
 
-The purpose of this standard is to make product engineering work executable by AI systems while remaining understandable, governable, and auditable by humans.
-
-This is not a traditional engineering process with AI added as a productivity tool. It is a process designed specifically for an environment where humans provide product direction and oversight, while AI performs much of the decomposition, generation, implementation, verification, and reporting work.
+People set product direction, approve priorities, and review the work.
+Agents and scripts help turn approved capabilities into specifications, code,
+tests, and evidence. Each artifact remains traceable to the product decision
+that led to it.
 
 ---
 

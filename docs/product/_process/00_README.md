@@ -1,5 +1,17 @@
 # AI-First Product Engineering Process
 
+This is one implementation of an AI-first Agile pipeline. We chose a
+**Product-First** approach, where every change starts from a well-defined
+[product design](02_product-led-design.md) and [roadmap](03_roadmap-specification.md).
+The design defines what the product should do and the capabilities it needs.
+The roadmap connects those capabilities to business outcomes and sets the
+order in which we intend to deliver them.
+
+Each change carries that product intent into its specifications, implementation,
+and tests. We use the resulting evidence to see which capabilities have been
+delivered and measure roadmap progress. The [orchestrator](../orchestrator/README.md)
+runs this workflow and supports other pipeline definitions.
+
 [Product documentation](../README.md)
 
 **Version:** 1.0  
@@ -10,13 +22,12 @@
 
 ## Purpose
 
-This folder defines the process standards for an AI-first product engineering repository.
+These process standards show how product design and roadmap priorities become
+work that people and agents can carry through delivery. People define product
+intent, set priorities, and review the results. Agents and scripted steps help
+turn approved work into specifications, code, tests, and evidence.
 
-This repository is not intended to be a loose collection of documents, tickets, code, tests, and reports. It is intended to operate as a codified product knowledge system where humans define intent and provide oversight, while AI systems perform much of the analysis, generation, implementation, verification, and reporting work.
-
-The standards in this folder establish the operating model for that system.
-
-They are designed around one core idea:
+The process is built around one principle.
 
 > Every artifact is codified, machine-readable, human-readable, linearly generated from the previous layer where possible, and traceable backward to its source.
 
@@ -63,7 +74,9 @@ The AI role shifts from assistant-at-the-edge to active execution engine operati
 
 ## Linear Product Knowledge Chain
 
-All product engineering artifacts should fit into a single linear knowledge chain.
+The chain below follows a capability from product intent through release. The
+roadmap groups capabilities by business outcome and delivery phase, and uses
+the evidence from this chain to show progress.
 
 ```text
 Product Intent
