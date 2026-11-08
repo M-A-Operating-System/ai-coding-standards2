@@ -125,6 +125,7 @@ The recommended loop is:
 8. AI executes verification.
 9. Human reviews evidence.
 10. Roadmap and traceability reports are generated.
+11. Eligible merged changes are published through release management.
 ```
 
 This loop preserves human control while allowing AI to do the work.
@@ -325,6 +326,14 @@ AI review may check:
 - Technical debt
 
 Human approval remains required for important changes, release decisions, and risk acceptance.
+
+---
+
+## Handoff to Release Management
+
+After review and merge, the pull request, linked issue, and verification
+evidence are available to the release process. See [Release Management](06_release-management.md)
+for how eligible changes are selected, checked, and published.
 
 ---
 

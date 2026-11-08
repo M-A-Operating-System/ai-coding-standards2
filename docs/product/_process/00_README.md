@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Status:** Draft Process Standard  
-**Folder:** `docs/_process`
+**Folder:** `docs/product/_process`
 
 ---
 
@@ -81,6 +81,8 @@ Test Specifications
 Implementation
     ↓
 Evidence
+    ↓
+Release
 ```
 
 This chain is intentionally linear.
@@ -90,6 +92,8 @@ The process should not require teams to reverse engineer product intent from sou
 The same chain can also be traversed backward.
 
 ```text
+Release
+    ↓
 Evidence
     ↓
 Test Specification
@@ -205,6 +209,7 @@ The graph is not separate from the repository. The graph is encoded in the repos
 | `03_roadmap-specification.md` | Defines how roadmap progress is calculated from capability evidence |
 | `04_ai-agile-implementation.md` | Defines the AI-first implementation loop |
 | `05_product-architecture-and-technical-architecture.md` | Defines how product architecture and technical architecture operate in parallel |
+| [`06_release-management.md`](06_release-management.md) | Defines how verified, merged changes become a versioned release |
 
 These documents are complementary and should be read together.
 

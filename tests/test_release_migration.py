@@ -20,7 +20,7 @@ import pytest
 _REPO_ROOT = Path(__file__).parent.parent
 _RELEASE_YML = _REPO_ROOT / ".github" / "workflows" / "release.yml"
 _PIPELINE_JSON = _REPO_ROOT / "pipeline" / "pipeline.json"
-_MIGRATION_DOC = _REPO_ROOT / "docs" / "product" / "orchestrator" / "release-migration.md"
+_MIGRATION_DOC = _REPO_ROOT / "docs" / "product" / "_process" / "06_release-management.md"
 
 
 # ---------------------------------------------------------------------------
@@ -113,8 +113,7 @@ class TestMigrationDocumentation:
     def test_migration_doc_exists(self):
         """Scenario R4: migration doc must be present in the repo."""
         assert _MIGRATION_DOC.exists(), (
-            f"migration documentation not found at {_MIGRATION_DOC}; "
-            "create docs/product/orchestrator/release-migration.md."
+            f"release management documentation not found at {_MIGRATION_DOC}."
         )
 
     def test_migration_doc_has_rollback_section(self):

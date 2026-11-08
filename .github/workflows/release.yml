@@ -18,7 +18,7 @@ name: RELEASE - publish
 #
 #   workflow_dispatch -- emergency manual release outside the normal pipeline;
 #                        use the orchestrator's weekly-release flow for the
-#                        standard path (see docs/product/orchestrator/release-migration.md).
+#                        standard path (see docs/product/_process/06_release-management.md).
 #   push: tags: v*   -- off-cycle release when a vX.Y.Z tag is pushed manually
 #                        (e.g. a major version cut or an emergency patch).
 
