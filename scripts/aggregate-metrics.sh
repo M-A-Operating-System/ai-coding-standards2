@@ -122,12 +122,19 @@ for i, (ts, lines) in enumerate(buckets):
     print(path + "\t" + ts)
 PYEOF
 
+bucket_index="${tmpdir}/bucket_index.txt"
+if ! python3 -I "$split_py" "$records_file" "$tmpdir" > "$bucket_index"; then
+    echo "aggregate-metrics: ERROR: split_buckets.py failed" >&2
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
+fi
+
 bucket_files=()
 bucket_starts=()
 while IFS=$'\t' read -r bfile bstart; do
     bucket_files+=("$bfile")
     bucket_starts+=("$bstart")
-done < <(python3 -I "$split_py" "$records_file" "$tmpdir")
+done < "$bucket_index"
 
 bucket_count=${#bucket_files[@]}
 

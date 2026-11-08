@@ -307,3 +307,52 @@ class TestPerBucketCommits:
         assert "DRY RUN" in res.stderr
         # no new commits
         assert _commit_count(agg_env["remote"]) == 1
+
+    def test_split_buckets_failure_reports_blocked_not_complete(self, agg_env):
+        """RV-001/RV-002: a split_buckets.py crash must surface as blocked, not
+        a silent false 'complete' with 0 buckets committed.
+
+        A PATH-shadowing python3 wrapper fails only the split_buckets.py
+        invocation (identified by its basename, which is stable even though
+        its containing tmpdir varies per run) and delegates every other
+        python3 call -- the fake aggregator in particular -- to the real
+        interpreter unchanged.
+        """
+        records = _make_records((BUCKET1_START, BUCKET1_END))
+
+        fake_bin = agg_env["tmp"] / "fake_bin"
+        fake_bin.mkdir()
+        real_python3 = shutil.which("python3")
+        wrapper = fake_bin / "python3"
+        wrapper.write_text(
+            "#!/usr/bin/env bash\n"
+            "for a in \"$@\"; do\n"
+            '  if [[ "$(basename -- "$a")" == "split_buckets.py" ]]; then\n'
+            '    echo "fake python3: simulated split_buckets.py crash" >&2\n'
+            "    exit 1\n"
+            "  fi\n"
+            "done\n"
+            f'exec "{real_python3}" "$@"\n'
+        )
+        wrapper.chmod(0o755)
+
+        records_file = agg_env["tmp"] / "fake_records.jsonl"
+        records_file.write_text(records)
+        script_env = {
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "HOME": os.environ.get("HOME", str(agg_env["clone"])),
+            "FAKE_AGGREGATOR_RECORDS": str(records_file),
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+        }
+        res = subprocess.run(
+            ["bash", str(agg_env["scripts_dir"] / "aggregate-metrics.sh"), "--period", "week"],
+            env=script_env, cwd=str(agg_env["clone"]), capture_output=True, text=True,
+        )
+
+        assert "AI_AGILE_STATUS: blocked" in res.stdout, res.stdout
+        assert "AI_AGILE_STATUS: complete" not in res.stdout
+        # only the seed commit remains -- nothing was appended or committed
+        assert _commit_count(agg_env["remote"]) == 1
