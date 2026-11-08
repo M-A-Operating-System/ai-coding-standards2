@@ -1,5 +1,6 @@
 {
-  "stopped_at": "2026-08-20T13:12:14Z",
-  "reason": "not ready",
-  "stopped_by": "github-actions"
+  "stopped_at": "2026-11-08T12:57:43Z",
+  "reason": "Upgrading to maintenance only",
+  "stopped_by": "github-actions",
+  "level": 1
 }
