@@ -492,36 +492,63 @@ def compute_blended_record(
 # need no change (issue #533 PR review, RV-003). "day" was added by issue #547.
 _BUCKET_FUNCS = {"week": week_bucket, "day": day_bucket}
 
+# Maximum number of buckets the backward walk will examine before stopping.
+# Prevents an unbounded loop when records.jsonl is empty or corrupt (issue #669).
+_WALK_LIMITS = {"week": 52, "day": 366}
+
+# Time distance between consecutive same-period buckets (used to step backward).
+_WALK_STEPS = {"week": timedelta(weeks=1), "day": timedelta(days=1)}
+
 
 def compute_period_aggregates(records: list, now: datetime, period: str = "week") -> list:
-    """Compute aggregate records for the most recent complete bucket of `period`.
+    """Walk backward from now's most recent complete bucket, appending one
+    result set per still-missing bucket, returned oldest first.
 
-    Returns [] when:
-      - the bucket is already aggregated (idempotent re-run);
-      - no raw records fall within the bucket (nothing to aggregate).
+    The walk stops when it reaches a bucket that already_aggregated() returns
+    True for, or after at most _WALK_LIMITS[period] steps (52 weekly / 366
+    daily) to prevent an unbounded loop on an empty or corrupt records file
+    (issue #669).
 
-    Aggregate rows produced (all sharing the given period):
+    Returns [] when no unaggregated buckets with raw records are found.
+
+    Aggregate rows produced per bucket (all sharing the given period):
       1. One per distinct real agent_id in the bucket (per-agent breakdown).
       2. One blended total row (agent_id=="metrics-aggregator").
     """
-    bucket_start, bucket_end = _BUCKET_FUNCS[period](now)
+    bucket_fn = _BUCKET_FUNCS[period]
+    step = _WALK_STEPS[period]
+    limit = _WALK_LIMITS[period]
 
-    if already_aggregated(records, bucket_start, period):
-        return []
+    # Collect per-bucket result sets newest-first; reverse at the end for oldest-first output.
+    per_bucket_results = []
 
-    bucket_records = [
-        r for r in records
-        if not _is_aggregate(r)       # skip prior aggregate rows
-        and not r.get("event")        # skip schedule.claim/release bookkeeping
-        and _in_bucket(r, bucket_start, bucket_end)
-    ]
+    for i in range(limit):
+        bucket_start, bucket_end = bucket_fn(now - step * i)
 
-    if not bucket_records:
-        return []
+        if already_aggregated(records, bucket_start, period):
+            break
 
+        bucket_records = [
+            r for r in records
+            if not _is_aggregate(r)       # skip prior aggregate rows
+            and not r.get("event")        # skip schedule.claim/release bookkeeping
+            and _in_bucket(r, bucket_start, bucket_end)
+        ]
+
+        if bucket_records:
+            bucket_result = []
+            bucket_result.extend(
+                compute_per_agent_records(bucket_records, bucket_start, bucket_end, period)
+            )
+            bucket_result.append(
+                compute_blended_record(bucket_records, bucket_start, bucket_end, period)
+            )
+            per_bucket_results.append(bucket_result)
+
+    per_bucket_results.reverse()
     result = []
-    result.extend(compute_per_agent_records(bucket_records, bucket_start, bucket_end, period))
-    result.append(compute_blended_record(bucket_records, bucket_start, bucket_end, period))
+    for bucket_result in per_bucket_results:
+        result.extend(bucket_result)
     return result
 
 

@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 from metrics_aggregator import (
     METRICS_AGGREGATOR_ID,
     _BUCKET_FUNCS,
+    _WALK_LIMITS,
     _parse_ts,
     already_aggregated,
     compute_blended_record,
@@ -735,3 +736,98 @@ class TestDayBucket:
         at_midnight = _utc("2026-10-07T00:00:00Z")
         start, end = day_bucket(at_midnight)
         assert start == _utc("2026-10-06T00:00:00Z")
+
+
+class TestBoundedBackwardWalk:
+    """Bounded backward walk for multi-bucket gap recovery (issue #669).
+
+    Traceability to Gherkin scenarios in issue #669:
+      Multiple missing weekly buckets oldest first  -> test_three_missing_weekly_buckets_oldest_first
+      Walk halts at first already-aggregated bucket -> test_walk_halts_at_already_aggregated_bucket
+      Empty records weekly walk bounded             -> test_empty_records_walk_bounded_weekly
+      Empty records daily walk bounded              -> test_empty_records_walk_bounded_daily
+      Single missing bucket unchanged               -> test_single_missing_bucket_unchanged
+      --now controls walk start                     -> test_now_override_controls_walk_start
+    """
+
+    # _NOW = 2026-10-05 (Monday).
+    # Buckets, newest first:
+    #   i=0: 2026-09-28 .. 2026-10-04
+    #   i=1: 2026-09-21 .. 2026-09-27
+    #   i=2: 2026-09-14 .. 2026-09-20
+    #   i=3: 2026-09-07 .. 2026-09-13
+
+    _WEEK0_TS = "2026-10-01T12:00:00Z"  # inside bucket i=0
+    _WEEK1_TS = "2026-09-24T12:00:00Z"  # inside bucket i=1
+    _WEEK2_TS = "2026-09-17T12:00:00Z"  # inside bucket i=2
+
+    def test_three_missing_weekly_buckets_oldest_first(self):
+        records = [
+            _raw_record("issue-classifier", self._WEEK0_TS),
+            _raw_record("issue-classifier", self._WEEK1_TS),
+            _raw_record("issue-classifier", self._WEEK2_TS),
+        ]
+        result = compute_period_aggregates(records, _NOW, period="week")
+        blended = [r for r in result if r["agent_id"] == METRICS_AGGREGATOR_ID]
+        assert len(blended) == 3
+        # Oldest bucket first
+        assert blended[0]["timestamp_start"] == "2026-09-14T00:00:00Z"
+        assert blended[0]["timestamp_end"]   == "2026-09-20T23:59:59Z"
+        assert blended[1]["timestamp_start"] == "2026-09-21T00:00:00Z"
+        assert blended[1]["timestamp_end"]   == "2026-09-27T23:59:59Z"
+        assert blended[2]["timestamp_start"] == "2026-09-28T00:00:00Z"
+        assert blended[2]["timestamp_end"]   == "2026-10-04T23:59:59Z"
+
+    def test_walk_halts_at_already_aggregated_bucket(self):
+        # Buckets i=0 and i=1 are missing; bucket i=2 is already aggregated.
+        # Exactly 2 aggregate row sets should be appended; the already-aggregated
+        # bucket must not be duplicated.
+        existing_agg = {
+            "agent_id": METRICS_AGGREGATOR_ID,
+            "period": "week",
+            "timestamp_start": "2026-09-14T00:00:00Z",
+            "timestamp_end":   "2026-09-20T23:59:59Z",
+        }
+        records = [
+            _raw_record("issue-classifier", self._WEEK0_TS),
+            _raw_record("issue-classifier", self._WEEK1_TS),
+            existing_agg,
+        ]
+        result = compute_period_aggregates(records, _NOW, period="week")
+        blended = [r for r in result if r["agent_id"] == METRICS_AGGREGATOR_ID]
+        assert len(blended) == 2
+        starts = {r["timestamp_start"] for r in blended}
+        assert "2026-09-14T00:00:00Z" not in starts  # already-aggregated bucket not duplicated
+        assert "2026-09-21T00:00:00Z" in starts
+        assert "2026-09-28T00:00:00Z" in starts
+
+    def test_empty_records_walk_bounded_weekly(self):
+        result = compute_period_aggregates([], _NOW, period="week")
+        assert result == []
+
+    def test_empty_records_walk_bounded_daily(self):
+        result = compute_period_aggregates([], _NOW, period="day")
+        assert result == []
+
+    def test_walk_limit_constants_match_spec(self):
+        assert _WALK_LIMITS["week"] == 52
+        assert _WALK_LIMITS["day"] == 366
+
+    def test_single_missing_bucket_unchanged(self):
+        records = [_raw_record("issue-classifier", _IN_BUCKET_TS)]
+        result = compute_period_aggregates(records, _NOW, period="week")
+        blended = [r for r in result if r["agent_id"] == METRICS_AGGREGATOR_ID]
+        assert len(blended) == 1
+        assert blended[0]["timestamp_start"] == _BUCKET_START
+        assert blended[0]["timestamp_end"]   == _BUCKET_END
+
+    def test_now_override_controls_walk_start(self):
+        # 2024-01-14 is a Sunday (weekday=6); the most recent complete week is
+        # Mon 2024-01-01 .. Sun 2024-01-07.
+        custom_now = _utc("2024-01-14T12:00:00Z")
+        week_ts = "2024-01-03T12:00:00Z"  # inside 2024-01-01 .. 2024-01-07
+        records = [_raw_record("issue-classifier", week_ts)]
+        result = compute_period_aggregates(records, custom_now, period="week")
+        blended = [r for r in result if r["agent_id"] == METRICS_AGGREGATOR_ID]
+        assert len(blended) == 1
+        assert blended[0]["timestamp_start"] == "2024-01-01T00:00:00Z"
