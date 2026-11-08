@@ -137,10 +137,22 @@ jobs:
 
   # --- Emergency-stop check ---------------------------------------------------
   # Checks for .pipeline-stop via the Contents API only -- no checkout, no
-  # Python, no npm install. Lets a stopped pipeline's triggers resolve to a
-  # green, skipped run in a few seconds instead of paying for a full runner
-  # setup only to have the orchestrator's own is_pipeline_stopped() check
-  # (pipeline_orchestrator.py) bail out after the expensive steps already ran.
+  # Python, no npm install (jq and base64 are preinstalled on ubuntu-latest,
+  # so reading the marker's level costs nothing extra). Lets a stopped
+  # pipeline's triggers resolve to a green, skipped run in a few seconds
+  # instead of paying for a full runner setup only to have the orchestrator's
+  # own is_pipeline_stopped() check (pipeline_orchestrator.py) bail out after
+  # the expensive steps already ran.
+  #
+  # The marker's own `level` decides whether this job-level shortcut applies
+  # at all: level 3 (or a marker with no level -- the pre-tiered format)
+  # stops every step, so skipping the whole orchestrate job here is safe.
+  # Level 1 or 2 only stops *some* steps (pipeline.json's per-step
+  # stopOnLevel), which the orchestrator itself decides once it runs -- so
+  # this job must let orchestrate proceed rather than skipping it outright,
+  # or a level-1/2 stop would wrongly block the maintenance/other steps it
+  # was meant to leave running.
+  #
   # This is a cost optimisation, not the authoritative check: the orchestrator
   # still re-checks the marker itself once the working tree is checked out, so
   # a transient API failure here (treated as "not stopped") never causes a
@@ -163,11 +175,18 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if gh api "repos/${GITHUB_REPOSITORY}/contents/.pipeline-stop" >/dev/null 2>&1; then
+          CONTENT=$(gh api "repos/${GITHUB_REPOSITORY}/contents/.pipeline-stop" --jq '.content' 2>/dev/null) || CONTENT=""
+          if [ -z "$CONTENT" ]; then
+            echo "stopped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LEVEL=$(echo "$CONTENT" | base64 -d | jq -r '.level // 3' 2>/dev/null) || LEVEL=3
+          if [ "$LEVEL" = "3" ]; then
             echo "stopped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::.pipeline-stop marker present -- skipping the orchestrator run."
+            echo "::notice::.pipeline-stop marker present at level 3 -- skipping the orchestrator run."
           else
             echo "stopped=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::.pipeline-stop marker present at level ${LEVEL} -- running orchestrator; its own per-step stopOnLevel check applies."
           fi
 
   # --- Normal pipeline operation ----------------------------------------------

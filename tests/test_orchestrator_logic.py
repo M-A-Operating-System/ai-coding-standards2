@@ -1150,6 +1150,29 @@ class TestOrchestratorSkipsWhenStopped:
             "check-stop must query the .pipeline-stop marker via the Contents API"
         )
 
+    def test_check_stop_job_only_skips_orchestrate_at_full_stop_level(self):
+        """A level 1 or 2 marker only blocks SOME steps (pipeline.json's
+        per-step stopOnLevel), decided by the orchestrator once it runs --
+        so check-stop must not skip the whole orchestrate job just because
+        a marker file exists. It must read the marker's own `level` and only
+        report stopped=true for level 3 (or a marker with no level at all,
+        the pre-tiered format, which still means "stop everything").
+        Regression guard: before this, check-stop treated any marker's mere
+        presence as a full stop, silently blocking level-1/2-exempt
+        maintenance steps (metrics-aggregation, metrics-report,
+        weekly-release) that were supposed to keep running."""
+        content = self._workflow_text()
+        check_stop_start = content.index("check-stop:")
+        orchestrate_start = content.index("orchestrate:")
+        check_stop_block = content[check_stop_start:orchestrate_start]
+        assert ".level" in check_stop_block, (
+            "check-stop must read the marker's level field, not just its presence"
+        )
+        assert re.search(r'LEVEL\s*=\s*"?3"?', check_stop_block), (
+            "check-stop must compare the parsed level against 3 before "
+            "reporting stopped=true"
+        )
+
     def test_check_stop_job_does_not_set_up_python(self):
         """The whole point is to avoid the expensive setup -- check-stop must
         never touch actions/setup-python or npm install."""
