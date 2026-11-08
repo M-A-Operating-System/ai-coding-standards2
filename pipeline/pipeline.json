@@ -595,7 +595,7 @@
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 80 },
-          "stopOnLevel": 3,
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false, "creates_issues": true },
           "description": "Weekly three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads a durable coverage tracker, selects the next due codebase components, reviews them using pr-reviewer's finding schema (RV-NNN), checks for duplicate findings in still-open prior review issues, and requests a 'Technical Review - {date}' issue via result.json's creates_issue field. Cross-references docs/product/ only when code intent is unclear."
         }
