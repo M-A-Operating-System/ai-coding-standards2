@@ -867,7 +867,7 @@
           "dependencies": [],
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 600 },
-          "stopOnLevel": 2,
+          "stopOnLevel": 3,
           "expected_effect": { "commits": false },
           "description": "Determines the previous published release boundary and discovers merged PRs and closed issues since that boundary. Applies gates: exits with a structured no-change outcome when nothing is new; skips with a structured skipped outcome when the computed tag already exists; records a gate-failed outcome when the coverage threshold is not met. Otherwise generates release-notes Markdown via release_note_generator.py and creates a GitHub Release. All outcomes are recorded as structured JSON to stderr."
         }
