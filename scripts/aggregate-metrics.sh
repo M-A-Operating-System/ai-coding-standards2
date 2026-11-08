@@ -94,8 +94,45 @@ fi
 
 record_count=$(grep -c . -- "$records_file")
 
+# Split JSONL output into one file per bucket (grouped by timestamp_start).
+# All rows for one bucket share the same timestamp_start; buckets are oldest first.
+split_py="${tmpdir}/split_buckets.py"
+cat > "${split_py}" << 'PYEOF'
+import json, os, sys
+records_file, out_dir = sys.argv[1], sys.argv[2]
+buckets = []
+seen = {}
+with open(records_file) as fh:
+    for line in fh:
+        line = line.rstrip()
+        if not line:
+            continue
+        try:
+            ts = json.loads(line).get("timestamp_start", "")
+        except Exception:
+            ts = ""
+        if ts not in seen:
+            seen[ts] = len(buckets)
+            buckets.append((ts, []))
+        buckets[seen[ts]][1].append(line + "\n")
+for i, (ts, lines) in enumerate(buckets):
+    path = os.path.join(out_dir, "bucket_%04d.jsonl" % i)
+    with open(path, "w") as fh:
+        fh.writelines(lines)
+    print(path + "\t" + ts)
+PYEOF
+
+bucket_files=()
+bucket_starts=()
+while IFS=$'\t' read -r bfile bstart; do
+    bucket_files+=("$bfile")
+    bucket_starts+=("$bstart")
+done < <(python3 -I "$split_py" "$records_file" "$tmpdir")
+
+bucket_count=${#bucket_files[@]}
+
 if (( DRY_RUN )); then
-    echo "aggregate-metrics: DRY RUN -- would append ${record_count} record(s) to ai-agile/metrics:records.jsonl:" >&2
+    echo "aggregate-metrics: DRY RUN -- would append ${record_count} record(s) across ${bucket_count} bucket(s) to ai-agile/metrics:records.jsonl:" >&2
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         python3 -I -c '
@@ -110,26 +147,33 @@ print(f"  {summary}", file=sys.stderr)
     exit 0
 fi
 
-# Every record for this bucket (each per-agent breakdown row and the blended
-# total row) is appended in ONE commit via a single append-metrics-record.sh
-# call on the whole file -- never one commit per row. That makes the write
-# atomic: either every row for this bucket lands, or (append-metrics-record.sh
-# fails closed, STD-ARCH-014) none do. A mid-write crash can therefore never
-# leave the blended row -- already_aggregated()'s idempotency key -- without
-# its per-agent siblings, or vice versa (issue #533 PR review, RV-002).
+# Commit one bucket at a time so a crash mid-run leaves already-committed
+# buckets intact and idempotent on re-run (issue #670). Within each bucket,
+# all rows (per-agent breakdown rows + blended total row) land in a single
+# append-metrics-record.sh call -- the write is atomic per bucket (issue #533,
+# RV-002). Fail closed (STD-ARCH-014): on any push failure the error is
+# reported and the remaining buckets are skipped.
 #
 # set -e is deliberately not relied on here (RV-001): a bare command failure
 # under set -e exits with no AI_AGILE_STATUS sentinel, which the orchestrator
 # would otherwise have to treat as a crash rather than a reported `blocked`.
-if ! AI_AGILE_METRICS_BRANCH="ai-agile/metrics" \
-     AI_AGILE_METRICS_FILE="records.jsonl" \
-     AI_AGILE_METRICS_COMMIT_MESSAGE="metrics: ${PERIOD} aggregate (${record_count} record(s))" \
-     AI_AGILE_METRICS_RETRIES="3" \
-     bash "$APPEND_SCRIPT" "$records_file"; then
-    echo "aggregate-metrics: ERROR: append-metrics-record.sh failed -- no records were appended this run" >&2
-    echo "AI_AGILE_STATUS: blocked"
-    exit 0
-fi
+appended_total=0
+for i in "${!bucket_files[@]}"; do
+    bucket_file="${bucket_files[$i]}"
+    bucket_start="${bucket_starts[$i]}"
+    bucket_record_count=$(grep -c . -- "$bucket_file")
 
-echo "aggregate-metrics: appended ${record_count} record(s)" >&2
+    if ! AI_AGILE_METRICS_BRANCH="ai-agile/metrics" \
+         AI_AGILE_METRICS_FILE="records.jsonl" \
+         AI_AGILE_METRICS_COMMIT_MESSAGE="metrics: ${PERIOD} aggregate ${bucket_start} (${bucket_record_count} record(s))" \
+         AI_AGILE_METRICS_RETRIES="3" \
+         bash "$APPEND_SCRIPT" "$bucket_file"; then
+        echo "aggregate-metrics: ERROR: append-metrics-record.sh failed for bucket ${bucket_start} -- previously committed buckets remain intact" >&2
+        echo "AI_AGILE_STATUS: blocked"
+        exit 0
+    fi
+    appended_total=$(( appended_total + bucket_record_count ))
+done
+
+echo "aggregate-metrics: appended ${appended_total} record(s) across ${bucket_count} bucket(s)" >&2
 echo "AI_AGILE_STATUS: complete"
