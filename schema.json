@@ -1,7 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "metrics.schema.json",
   "title": "AI Agile Metrics Record",
-  "description": "Per-cycle orchestrator metrics. Required fields are the floor; additionalProperties: true allows future CLI additions.",
+  "description": "Required-minimum schema for one row of ai-agile/metrics:records.jsonl -- a per-cycle (one row per agent invocation) or aggregate (period=week/day) orchestrator metrics record. additionalProperties: true allows future CLI additions. Null is accepted for every AI-specific field so scripted-step records (which set those fields to null) pass validation without a separate schema. Each property carries two descriptions: `description` is the technical provenance -- where the value comes from (the Anthropic API's own usage object, the Claude Code CLI's init/result events, or orchestrator-defined bookkeeping); `business_description` is what the field means in plain terms and why a reader of the weekly report would care about it. Published to ai-agile/metrics as schema.json by pipeline_orchestrator.py's _ensure_metrics_branch, and loaded from here as the single source of truth for that publish.",
   "type": "object",
   "required": [
     "timestamp_start",
@@ -20,167 +21,195 @@
   "properties": {
     "timestamp_start": {
       "type": "string",
-      "description": "ISO 8601 UTC timestamp when the orchestrator launched the step"
+      "description": "ISO 8601 UTC timestamp when the orchestrator launched the step",
+      "business_description": "Marks which reporting week or day this invocation's cost and activity get rolled into."
     },
     "timestamp_end": {
       "type": "string",
-      "description": "ISO 8601 UTC timestamp when the orchestrator observed step completion"
+      "description": "ISO 8601 UTC timestamp when the orchestrator observed step completion",
+      "business_description": "Marks when the step actually finished; paired with timestamp_start to measure how long it ran."
     },
     "github_issue_number": {
       "type": [
         "integer",
         "null"
       ],
-      "description": "The GitHub issue or PR number this invocation was dispatched for, or null for a scheduled/maintenance step with no single work item (orchestrator-defined)."
+      "description": "The GitHub issue or PR number this invocation was dispatched for, or null for a scheduled/maintenance step with no single work item (orchestrator-defined).",
+      "business_description": "Ties this run of work back to the specific issue or PR it was done for, letting cost and effort be rolled up per piece of work (e.g. cost per completed issue)."
     },
     "agent_id": {
       "type": "string",
-      "description": "The pipeline.json step name that ran (e.g. '03_execute/coder'), or 'metrics-aggregator' for an aggregate rollup row (orchestrator-defined)."
+      "description": "The pipeline.json step name that ran (e.g. '03_execute/coder'), or 'metrics-aggregator' for an aggregate rollup row (orchestrator-defined).",
+      "business_description": "Identifies which pipeline step did the work -- the key dimension every per-agent cost, duration, and token chart in the report is broken down by."
     },
     "branch_id": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The git branch the step ran against (e.g. 'issue-123'), or null when the step has no branch (orchestrator-defined)."
+      "description": "The git branch the step ran against (e.g. 'issue-123'), or null when the step has no branch (orchestrator-defined).",
+      "business_description": "Links this metrics row to the actual git branch the work landed on."
     },
     "pr_id": {
       "type": [
         "integer",
         "null"
       ],
-      "description": "The pull request number the step reviewed or acted on, or null when none applies (orchestrator-defined)."
+      "description": "The pull request number the step reviewed or acted on, or null when none applies (orchestrator-defined).",
+      "business_description": "Links this metrics row to the actual pull request the work produced or reviewed."
     },
     "cycle_id": {
       "type": "string",
-      "description": "A UUID identifying this one invocation's metrics row, generated fresh per run -- not a count of how many times the step has run (orchestrator-defined)."
+      "description": "A UUID identifying this one invocation's metrics row, generated fresh per run -- not a count of how many times the step has run (orchestrator-defined).",
+      "business_description": "A unique identifier for this one row, so re-running the aggregator can never double-count the same invocation."
     },
     "session_id": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The Claude Code CLI session identifier for this invocation, from the CLI's own init event (Claude Code CLI)."
+      "description": "The Claude Code CLI session identifier for this invocation, from the CLI's own init event (Claude Code CLI).",
+      "business_description": "Identifies the specific Claude Code run, useful for tracing a metrics row back to its full transcript when investigating an anomaly."
     },
     "model": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The Claude model that served this invocation (e.g. 'claude-sonnet-4-6'), from the CLI's own init event (Claude Code CLI)."
+      "description": "The Claude model that served this invocation (e.g. 'claude-sonnet-4-6'), from the CLI's own init event (Claude Code CLI).",
+      "business_description": "Which Claude model did the work -- the single biggest driver of cost-per-token, and the basis for the model-mix cost breakdown in reports."
     },
     "cwd": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The working directory the CLI invocation ran in, from the CLI's own init event (Claude Code CLI)."
+      "description": "The working directory the CLI invocation ran in, from the CLI's own init event (Claude Code CLI).",
+      "business_description": "Where on disk the work happened -- a debugging detail, not a figure anyone reports on."
     },
     "permission_mode": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The CLI permission mode in effect for this invocation (e.g. 'default', 'bypassPermissions'), from the CLI's own init event (Claude Code CLI)."
+      "description": "The CLI permission mode in effect for this invocation (e.g. 'default', 'bypassPermissions'), from the CLI's own init event (Claude Code CLI).",
+      "business_description": "What the agent was and wasn't allowed to do on its own -- relevant when investigating why a step stalled waiting on a human."
     },
     "tools_available": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The comma-separated list of tool names the CLI made available to the model for this invocation, from the CLI's own init event (Claude Code CLI)."
+      "description": "The comma-separated list of tool names the CLI made available to the model for this invocation, from the CLI's own init event (Claude Code CLI).",
+      "business_description": "What capabilities the agent had access to -- useful context when a step's behavior looks unexpected."
     },
     "mcp_servers": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The MCP servers connected for this invocation, from the CLI's own init event (Claude Code CLI)."
+      "description": "The MCP servers connected for this invocation, from the CLI's own init event (Claude Code CLI).",
+      "business_description": "Which external integrations were connected for this run -- mostly a debugging and audit detail."
     },
     "subtype": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The CLI result event's subtype (e.g. 'success', 'error_max_turns'), from the CLI's own result event (Claude Code CLI)."
+      "description": "The CLI result event's subtype (e.g. 'success', 'error_max_turns'), from the CLI's own result event (Claude Code CLI).",
+      "business_description": "A short code for exactly how the run ended (clean success vs. a specific failure mode) -- the quickest way to see why a run didn't finish cleanly."
     },
     "is_error": {
       "type": [
         "boolean",
         "null"
       ],
-      "description": "Whether the CLI itself reported this invocation as an error, from the CLI's own result event (Claude Code CLI)."
+      "description": "Whether the CLI itself reported this invocation as an error, from the CLI's own result event (Claude Code CLI).",
+      "business_description": "Whether this run failed outright -- the headline reliability signal rolled up into the blocked/failed rate metric in the report."
     },
     "duration_ms": {
       "type": "integer",
       "minimum": 0,
-      "description": "Total wall-clock duration of the invocation in milliseconds, from the CLI's own result event (Claude Code CLI)."
+      "description": "Total wall-clock duration of the invocation in milliseconds, from the CLI's own result event (Claude Code CLI).",
+      "business_description": "How long the step took end to end -- the main figure behind 'is the pipeline fast enough' questions, and the basis for the duration-by-agent chart."
     },
     "duration_api_ms": {
       "type": "integer",
       "minimum": 0,
-      "description": "Wall-clock time spent waiting on the Anthropic API specifically, a subset of duration_ms, from the CLI's own result event (Claude Code CLI)."
+      "description": "Wall-clock time spent waiting on the Anthropic API specifically, a subset of duration_ms, from the CLI's own result event (Claude Code CLI).",
+      "business_description": "How much of the run's total time was spent waiting on the model itself, separating model latency from everything else the step did (git operations, tool calls, etc.)."
     },
     "num_turns": {
       "type": "integer",
       "minimum": 0,
-      "description": "The number of agentic turns (one model response, plus any tool calls it made) the invocation took to reach its final result, from the CLI's own result event (Claude Code CLI)."
+      "description": "The number of agentic turns (one model response, plus any tool calls it made) the invocation took to reach its final result, from the CLI's own result event (Claude Code CLI).",
+      "business_description": "How many rounds of back-and-forth the agent needed to finish -- a rough proxy for how much work or iteration the task actually required."
     },
     "input_tokens": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of input tokens that were not read from or used to create a cache -- tokens after the last cache breakpoint (Anthropic API usage object)."
+      "description": "Number of input tokens that were not read from or used to create a cache -- tokens after the last cache breakpoint (Anthropic API usage object).",
+      "business_description": "How much fresh prompt content this run sent to the model. In a cache-heavy pipeline this is normally small, with most context served from cache instead -- a low value here is expected, not a sign of missing data."
     },
     "output_tokens": {
       "type": "integer",
       "minimum": 0,
-      "description": "The number of tokens Claude generated in its response, billed at the output-token rate (Anthropic API usage object)."
+      "description": "The number of tokens Claude generated in its response, billed at the output-token rate (Anthropic API usage object).",
+      "business_description": "How much the model wrote back -- usually the largest cost driver per run, since output tokens are billed at a materially higher rate than input or cache tokens."
     },
     "cache_creation_input_tokens": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of tokens written to the prompt cache when creating a new cache entry (Anthropic API usage object)."
+      "description": "Number of tokens written to the prompt cache when creating a new cache entry (Anthropic API usage object).",
+      "business_description": "Tokens the run paid a premium to write into Anthropic's prompt cache so a later run in the same context can reuse them more cheaply -- an upfront cost that pays off on subsequent turns."
     },
     "cache_read_input_tokens": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of tokens retrieved from the prompt cache for this request, rather than reprocessed (Anthropic API usage object)."
+      "description": "Number of tokens retrieved from the prompt cache for this request, rather than reprocessed (Anthropic API usage object).",
+      "business_description": "Tokens reused from an earlier cache write at a steep discount -- the main reason heavy multi-turn agent sessions stay affordable, and what the cache-efficiency ratio in the report measures."
     },
     "web_search_requests": {
       "type": "integer",
       "minimum": 0,
-      "description": "The number of web search tool calls the invocation made, from the CLI's own result event usage object (Claude Code CLI)."
+      "description": "The number of web search tool calls the invocation made, from the CLI's own result event usage object (Claude Code CLI).",
+      "business_description": "How many times this run searched the web -- a cost and behavior signal for the agents that are allowed that capability."
     },
     "service_tier": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The Anthropic API service tier this invocation was billed under (e.g. 'standard'), from the CLI's own result event (Claude Code CLI)."
+      "description": "The Anthropic API service tier this invocation was billed under (e.g. 'standard'), from the CLI's own result event (Claude Code CLI).",
+      "business_description": "Which Anthropic API capacity tier billed this run -- relevant when investigating cost or latency differences between runs of the same model."
     },
     "total_cost_usd": {
       "type": "number",
       "minimum": 0,
-      "description": "The invocation's total Anthropic API spend in USD, as computed by the CLI from token usage and model pricing, from the CLI's own result event (Claude Code CLI)."
+      "description": "The invocation's total Anthropic API spend in USD, as computed by the CLI from token usage and model pricing, from the CLI's own result event (Claude Code CLI).",
+      "business_description": "What this one invocation actually cost in dollars -- the figure every cost rollup in the report (by agent, by issue, by week) is built from."
     },
     "retry_count": {
       "type": "integer",
       "minimum": 0,
-      "description": "The number of automatic retries the orchestrator performed for this invocation (e.g. after a transient API error) (orchestrator-defined)."
+      "description": "The number of automatic retries the orchestrator performed for this invocation (e.g. after a transient API error) (orchestrator-defined).",
+      "business_description": "How many times the orchestrator had to retry this invocation after a transient failure -- an infrastructure-reliability signal distinct from the agent's own is_error outcome."
     },
     "retry_errors": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "One entry per retry, naming the error that triggered it (orchestrator-defined)."
+      "description": "One entry per retry, naming the error that triggered it (orchestrator-defined).",
+      "business_description": "What specifically went wrong on each retry -- the detail behind the retry_count number, useful for spotting a recurring failure pattern."
     },
     "classification": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The issue's classification label (e.g. 'enhancement', 'bug', 'spike') as set by 01_product_docs/issue-classifier, or null before classification runs (orchestrator-defined)."
+      "description": "The issue's classification label (e.g. 'enhancement', 'bug', 'spike') as set by 01_product_docs/issue-classifier, or null before classification runs (orchestrator-defined).",
+      "business_description": "What kind of work this issue is -- the dimension the report's value-add and classification-mix ratios use to separate forward-looking work from maintenance and overhead."
     }
   }
 }
