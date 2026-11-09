@@ -5,16 +5,9 @@
   "description": "Required-minimum schema for one row of ai-agile/metrics:records.jsonl -- a per-cycle (one row per agent invocation) or aggregate (period=week/day) orchestrator metrics record. additionalProperties: true allows future CLI additions. Null is accepted for every AI-specific field so scripted-step records (which set those fields to null) pass validation without a separate schema. Each property carries two descriptions: `description` is the technical provenance -- where the value comes from (the Anthropic API's own usage object, the Claude Code CLI's init/result events, or orchestrator-defined bookkeeping); `business_description` is what the field means in plain terms and why a reader of the weekly report would care about it. Published to ai-agile/metrics as schema.json by pipeline_orchestrator.py's _ensure_metrics_branch, and loaded from here as the single source of truth for that publish.",
   "type": "object",
   "required": [
-    "timestamp_start",
-    "timestamp_end",
-    "github_issue_number",
-    "agent_id",
-    "cycle_id",
-    "duration_ms",
-    "input_tokens",
-    "output_tokens",
-    "retry_count",
-    "retry_errors",
+    "timestamp_start", "timestamp_end", "github_issue_number",
+    "agent_id", "cycle_id", "duration_ms",
+    "input_tokens", "output_tokens", "retry_count", "retry_errors",
     "classification"
   ],
   "additionalProperties": true,
@@ -30,10 +23,7 @@
       "business_description": "Marks when the step actually finished; paired with timestamp_start to measure how long it ran."
     },
     "github_issue_number": {
-      "type": [
-        "integer",
-        "null"
-      ],
+      "type": ["integer", "null"],
       "description": "The GitHub issue or PR number this invocation was dispatched for, or null for a scheduled/maintenance step with no single work item (orchestrator-defined).",
       "business_description": "Ties this run of work back to the specific issue or PR it was done for, letting cost and effort be rolled up per piece of work (e.g. cost per completed issue)."
     },
@@ -43,18 +33,12 @@
       "business_description": "Identifies which pipeline step did the work -- the key dimension every per-agent cost, duration, and token chart in the report is broken down by."
     },
     "branch_id": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The git branch the step ran against (e.g. 'issue-123'), or null when the step has no branch (orchestrator-defined).",
       "business_description": "Links this metrics row to the actual git branch the work landed on."
     },
     "pr_id": {
-      "type": [
-        "integer",
-        "null"
-      ],
+      "type": ["integer", "null"],
       "description": "The pull request number the step reviewed or acted on, or null when none applies (orchestrator-defined).",
       "business_description": "Links this metrics row to the actual pull request the work produced or reviewed."
     },
@@ -64,153 +48,244 @@
       "business_description": "A unique identifier for this one row, so re-running the aggregator can never double-count the same invocation."
     },
     "session_id": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The Claude Code CLI session identifier for this invocation, from the CLI's own init event (Claude Code CLI).",
       "business_description": "Identifies the specific Claude Code run, useful for tracing a metrics row back to its full transcript when investigating an anomaly."
     },
     "model": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The Claude model that served this invocation (e.g. 'claude-sonnet-4-6'), from the CLI's own init event (Claude Code CLI).",
       "business_description": "Which Claude model did the work -- the single biggest driver of cost-per-token, and the basis for the model-mix cost breakdown in reports."
     },
     "cwd": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The working directory the CLI invocation ran in, from the CLI's own init event (Claude Code CLI).",
       "business_description": "Where on disk the work happened -- a debugging detail, not a figure anyone reports on."
     },
     "permission_mode": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The CLI permission mode in effect for this invocation (e.g. 'default', 'bypassPermissions'), from the CLI's own init event (Claude Code CLI).",
       "business_description": "What the agent was and wasn't allowed to do on its own -- relevant when investigating why a step stalled waiting on a human."
     },
     "tools_available": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The comma-separated list of tool names the CLI made available to the model for this invocation, from the CLI's own init event (Claude Code CLI).",
       "business_description": "What capabilities the agent had access to -- useful context when a step's behavior looks unexpected."
     },
     "mcp_servers": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The MCP servers connected for this invocation, from the CLI's own init event (Claude Code CLI).",
       "business_description": "Which external integrations were connected for this run -- mostly a debugging and audit detail."
     },
     "subtype": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The CLI result event's subtype (e.g. 'success', 'error_max_turns'), from the CLI's own result event (Claude Code CLI).",
       "business_description": "A short code for exactly how the run ended (clean success vs. a specific failure mode) -- the quickest way to see why a run didn't finish cleanly."
     },
     "is_error": {
-      "type": [
-        "boolean",
-        "null"
-      ],
+      "type": ["boolean", "null"],
       "description": "Whether the CLI itself reported this invocation as an error, from the CLI's own result event (Claude Code CLI).",
       "business_description": "Whether this run failed outright -- the headline reliability signal rolled up into the blocked/failed rate metric in the report."
     },
     "duration_ms": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "Total wall-clock duration of the invocation in milliseconds, from the CLI's own result event (Claude Code CLI).",
       "business_description": "How long the step took end to end -- the main figure behind 'is the pipeline fast enough' questions, and the basis for the duration-by-agent chart."
     },
     "duration_api_ms": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "Wall-clock time spent waiting on the Anthropic API specifically, a subset of duration_ms, from the CLI's own result event (Claude Code CLI).",
       "business_description": "How much of the run's total time was spent waiting on the model itself, separating model latency from everything else the step did (git operations, tool calls, etc.)."
     },
     "num_turns": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "The number of agentic turns (one model response, plus any tool calls it made) the invocation took to reach its final result, from the CLI's own result event (Claude Code CLI).",
       "business_description": "How many rounds of back-and-forth the agent needed to finish -- a rough proxy for how much work or iteration the task actually required."
     },
     "input_tokens": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "Number of input tokens that were not read from or used to create a cache -- tokens after the last cache breakpoint (Anthropic API usage object).",
       "business_description": "How much fresh prompt content this run sent to the model. In a cache-heavy pipeline this is normally small, with most context served from cache instead -- a low value here is expected, not a sign of missing data."
     },
     "output_tokens": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "The number of tokens Claude generated in its response, billed at the output-token rate (Anthropic API usage object).",
       "business_description": "How much the model wrote back -- usually the largest cost driver per run, since output tokens are billed at a materially higher rate than input or cache tokens."
     },
     "cache_creation_input_tokens": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "Number of tokens written to the prompt cache when creating a new cache entry (Anthropic API usage object).",
       "business_description": "Tokens the run paid a premium to write into Anthropic's prompt cache so a later run in the same context can reuse them more cheaply -- an upfront cost that pays off on subsequent turns."
     },
     "cache_read_input_tokens": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "Number of tokens retrieved from the prompt cache for this request, rather than reprocessed (Anthropic API usage object).",
       "business_description": "Tokens reused from an earlier cache write at a steep discount -- the main reason heavy multi-turn agent sessions stay affordable, and what the cache-efficiency ratio in the report measures."
     },
     "web_search_requests": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "The number of web search tool calls the invocation made, from the CLI's own result event usage object (Claude Code CLI).",
       "business_description": "How many times this run searched the web -- a cost and behavior signal for the agents that are allowed that capability."
     },
     "service_tier": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The Anthropic API service tier this invocation was billed under (e.g. 'standard'), from the CLI's own result event (Claude Code CLI).",
       "business_description": "Which Anthropic API capacity tier billed this run -- relevant when investigating cost or latency differences between runs of the same model."
     },
     "total_cost_usd": {
-      "type": "number",
-      "minimum": 0,
+      "type": "number", "minimum": 0,
       "description": "The invocation's total Anthropic API spend in USD, as computed by the CLI from token usage and model pricing, from the CLI's own result event (Claude Code CLI).",
       "business_description": "What this one invocation actually cost in dollars -- the figure every cost rollup in the report (by agent, by issue, by week) is built from."
     },
     "retry_count": {
-      "type": "integer",
-      "minimum": 0,
+      "type": "integer", "minimum": 0,
       "description": "The number of automatic retries the orchestrator performed for this invocation (e.g. after a transient API error) (orchestrator-defined).",
       "business_description": "How many times the orchestrator had to retry this invocation after a transient failure -- an infrastructure-reliability signal distinct from the agent's own is_error outcome."
     },
     "retry_errors": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
+      "type": "array", "items": { "type": "string" },
       "description": "One entry per retry, naming the error that triggered it (orchestrator-defined).",
       "business_description": "What specifically went wrong on each retry -- the detail behind the retry_count number, useful for spotting a recurring failure pattern."
     },
     "classification": {
-      "type": [
-        "string",
-        "null"
-      ],
+      "type": ["string", "null"],
       "description": "The issue's classification label (e.g. 'enhancement', 'bug', 'spike') as set by 01_product_docs/issue-classifier, or null before classification runs (orchestrator-defined).",
       "business_description": "What kind of work this issue is -- the dimension the report's value-add and classification-mix ratios use to separate forward-looking work from maintenance and overhead."
     }
+  },
+  "derived_metrics": {
+    "$comment": "Aggregate/derived fields computed by metrics_aggregator.py onto a blended (agent_id=metrics-aggregator) or per-agent aggregate row -- not present on a raw per-invocation record (see `properties` above for those). field-naming convention: {aggregation_fn}_{base_metric}[-{dimension}] (see metrics_aggregator.py module docstring). metrics_report.py loads this object directly to build its chart list: `title`/`ylabel`/`chart_type` drive rendering, `description` is the technical provenance, `business_description` is the paragraph rendered between each metric's H2 heading and its charts in the PDF -- this file is the single source of truth for both the orchestrator's schema.json publish and the report's own metric catalogue. Order here is the report's priority order. A `chart_type` of 'bar_agent_stacked' entry has no single `field_source`; its `components.in`/`components.out` name the two per-agent fields stacked in one bar instead.",
+    "sum_cost_usd": {
+      "type": "number",
+      "chart_type": "bar_agent",
+      "title": "Cost by agent",
+      "ylabel": "cost (USD)",
+      "description": "sum_cost_usd: total_cost_usd summed across raw per-invocation records in the bucket, computed per agent_id (compute_per_agent_records) and blended (compute_blended_record).",
+      "business_description": "Total Anthropic API spend (USD) attributed to each pipeline agent in the window, showing where spending concentrates across the pipeline."
+    },
+    "tokens_by_agent": {
+      "type": "object",
+      "chart_type": "bar_agent_stacked",
+      "title": "Tokens by agent",
+      "ylabel": "tokens",
+      "components": {
+        "in": "sum_input_tokens", "out": "sum_output_tokens",
+        "label_in": "input", "label_out": "output"
+      },
+      "description": "Stacked pairing of sum_input_tokens and sum_output_tokens, each summed per agent_id the same way as any other sum_* field.",
+      "business_description": "Total input and output tokens consumed by each pipeline agent in the window, stacked by direction (input vs output), showing where token spend concentrates across the pipeline."
+    },
+    "sum_duration_ms": {
+      "type": "integer",
+      "chart_type": "bar_agent",
+      "title": "Duration by agent",
+      "ylabel": "duration (ms)",
+      "description": "sum_duration_ms: duration_ms summed across raw per-invocation records in the bucket, per agent_id.",
+      "business_description": "Total wall-clock duration each pipeline agent spent running in the window, showing where time is spent across the pipeline."
+    },
+    "count_issues": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Throughput (issues per week)",
+      "ylabel": "issues",
+      "description": "count_issues: the number of distinct github_issue_number values seen across raw records in the bucket (compute_blended_record).",
+      "business_description": "The number of distinct issues the pipeline processed in each period, a measure of overall delivery throughput."
+    },
+    "ave_cost_usd-issue": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Cost per completed issue",
+      "ylabel": "cost (USD)",
+      "description": "ave_cost_usd-issue: sum_cost_usd divided by count_issues for the bucket.",
+      "business_description": "Average Anthropic API spend (USD) per completed issue in the period, a unit-economics view of pipeline cost."
+    },
+    "ratio_value_add-issue": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Value-add ratio",
+      "ylabel": "ratio (0-1)",
+      "description": "compute_value_add_ratio: the average (value-add cost / total cost) ratio across issues in the bucket, with the spike carve-out rules from issue #533 applied.",
+      "business_description": "The share of agent invocations in the period classified as value-add work (feature or research) rather than overhead, with a spike carve-out applied by the metrics aggregator."
+    },
+    "ratio_classification_mix": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Classification mix (feature and research / total)",
+      "ylabel": "ratio (0-1)",
+      "description": "compute_classification_mix: the count of feature-and-research-classified issues divided by (feature-and-research + corrective) issues in the bucket; null-classified issues are excluded from both.",
+      "business_description": "The proportion of invocations classified as feature or research work versus the total, reflecting the balance between forward-looking work and maintenance/overhead."
+    },
+    "ratio_cache_efficiency": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Cache efficiency (cache reads / total cache tokens)",
+      "ylabel": "ratio (0-1)",
+      "description": "sum_cache_read_input_tokens divided by (sum_cache_read_input_tokens + sum_cache_creation_input_tokens) for the bucket.",
+      "business_description": "The share of total cache tokens that were cache reads rather than cache writes, measuring how effectively the pipeline reuses prompt caching across invocations."
+    },
+    "ratio_error_rate": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Blocked/failed rate per invocation",
+      "ylabel": "ratio (0-1)",
+      "description": "count_is_error divided by count_invocations for the bucket.",
+      "business_description": "The proportion of agent invocations in the period that ended in a blocked or failed outcome, a reliability signal for the pipeline."
+    },
+    "ratio_coder_invocations-issue": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Coder runs per issue",
+      "ylabel": "invocations per issue",
+      "description": "compute_coder_reinvocation_ratio: the count of invocations by any agent_id ending '/coder' divided by the number of distinct github_issue_number values among them, in the bucket.",
+      "business_description": "Average number of times coder ran per issue it touched in the period, reconstructed from invocation counts since the review-cycle:N label pr-reviewer's review_loop writes on each re-invocation is never itself stored in a metrics record. A value of 1.0 means coder's first pass was accepted every time; consistently above 1 means coder is not fixing pr-reviewer's findings on the first attempt."
+    },
+    "count_invocations": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Total agent invocations",
+      "ylabel": "count",
+      "description": "count_invocations: the number of raw per-invocation records in the bucket (compute_blended_record), or per agent_id (compute_per_agent_records).",
+      "business_description": "The total number of agent invocations (one per pipeline step run) recorded in the period, across every agent."
+    },
+    "count_is_error": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Invocations ending in error",
+      "ylabel": "count",
+      "description": "count_is_error: the number of raw records in the bucket whose is_error field is true.",
+      "business_description": "The number of agent invocations in the period the Claude Code CLI itself flagged as an error."
+    },
+    "sum_retry_count": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Retries",
+      "ylabel": "count",
+      "description": "sum_retry_count: retry_count summed across raw per-invocation records in the bucket.",
+      "business_description": "The total number of automatic retries the orchestrator performed across invocations in the period (e.g. after a transient API error)."
+    },
+    "sum_num_turns": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Agent turns",
+      "ylabel": "turns",
+      "description": "sum_num_turns: num_turns summed across raw per-invocation records in the bucket.",
+      "business_description": "The total number of agentic turns -- one model response plus any tool calls it made -- across invocations in the period."
+    },
+    "sum_cache_creation_input_tokens": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Cache tokens written",
+      "ylabel": "tokens",
+      "description": "sum_cache_creation_input_tokens: cache_creation_input_tokens summed across raw per-invocation records in the bucket.",
+      "business_description": "Total tokens written to Anthropic's prompt cache when creating a new cache entry, summed across invocations in the period."
+    },
+    "sum_cache_read_input_tokens": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Cache tokens read",
+      "ylabel": "tokens",
+      "description": "sum_cache_read_input_tokens: cache_read_input_tokens summed across raw per-invocation records in the bucket.",
+      "business_description": "Total tokens retrieved from Anthropic's prompt cache rather than reprocessed, summed across invocations in the period."
+    }
   }
 }
-
