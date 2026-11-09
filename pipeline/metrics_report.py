@@ -22,19 +22,21 @@ METRIC PRIORITY ORDER (v1)
 --------------------------
 1. Cost by agent_id (bar chart) -- where spending goes; decouples
    agent-mix shifts from performance trends in all other charts.
-2. Duration by agent_id (bar chart).
-3. Throughput: issues per week (count_issues from blended rows).
-4. Cost per completed issue (ave_cost_usd-issue).
-5. Value-add ratio (ratio_value_add-issue) -- spike carve-out applied by
+2. Tokens by agent_id (stacked bar chart; input vs output tokens, one color
+   per direction) -- total token spend per agent in the period.
+3. Duration by agent_id (bar chart).
+4. Throughput: issues per week (count_issues from blended rows).
+5. Cost per completed issue (ave_cost_usd-issue).
+6. Value-add ratio (ratio_value_add-issue) -- spike carve-out applied by
    metrics-aggregator; values here reflect that definition directly and
    are not recomputed.
-6. Classification mix (ratio_classification_mix) -- spike carve-out applied
+7. Classification mix (ratio_classification_mix) -- spike carve-out applied
    by metrics-aggregator; values here reflect that definition directly and
    are not recomputed.
-7. Cache efficiency (ratio_cache_efficiency).
-8. Blocked/failed rate per invocation (ratio_error_rate).
-9. Any additional scalar aggregate fields discovered dynamically from the
-   records are appended after the above, in discovery order.
+8. Cache efficiency (ratio_cache_efficiency).
+9. Blocked/failed rate per invocation (ratio_error_rate).
+10. Any additional scalar aggregate fields discovered dynamically from the
+    records are appended after the above, in discovery order.
 
 UNIT DISCIPLINE
 ---------------
@@ -60,6 +62,8 @@ import base64
 import html
 import io
 import json
+import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -69,31 +73,143 @@ METRICS_BRANCH = "ai-agile/metrics"
 METRICS_RECORDS_FILE = "records.jsonl"
 METRICS_AGGREGATOR_ID = "metrics-aggregator"
 
+DOC_TITLE = "M&A Operating System AI-Agile Performance Report"
+ABOUT_TEXT = (
+    "This document contains aggregated summary data for various ai-agile "
+    "metrics. For more information on this process go to "
+    "https://github.com/M-A-Operating-System/ai-coding-standards2."
+)
+
 ROWS_PER_PAGE = 4
 WINDOW_12MO_WEEKS = 52
 WINDOW_2MO_DAYS = 60
 
 _LINE = "line"
 _BAR_AGENT = "bar_agent"
+_BAR_AGENT_STACKED = "bar_agent_stacked"
 
-# Priority-ordered metric definitions: (field_name, title, ylabel, chart_type).
-# Any additional scalar aggregate fields found in the blended records but not
-# listed here are appended after in discovery order, so a new field added by
-# a future metrics-aggregator update is rendered automatically.
+# Priority-ordered metric definitions: (field_name, title, ylabel, chart_type,
+# description). field_name is a plain string for _LINE/_BAR_AGENT entries, or
+# a (field_in, field_out) tuple for a _BAR_AGENT_STACKED entry (two series
+# stacked in one bar, one color per component). The description is rendered
+# as a short paragraph between each metric's H2 heading and its charts. Any
+# additional scalar aggregate fields found in the blended records but not
+# listed here are appended after in discovery order (with a generic
+# description), so a new field added by a future metrics-aggregator update
+# is rendered automatically.
 _KNOWN_METRICS = [
     # By-agent bar charts (sourced from per-agent breakdown rows).
-    ("sum_cost_usd",    "Cost by agent",     "cost (USD)",    _BAR_AGENT),
-    ("sum_duration_ms", "Duration by agent", "duration (ms)", _BAR_AGENT),
+    (
+        "sum_cost_usd", "Cost by agent", "cost (USD)", _BAR_AGENT,
+        "Total Anthropic API spend (USD) attributed to each pipeline agent "
+        "in the window, showing where spending concentrates across the pipeline.",
+    ),
+    (
+        ("sum_input_tokens", "sum_output_tokens"), "Tokens by agent", "tokens",
+        _BAR_AGENT_STACKED,
+        "Total input and output tokens consumed by each pipeline agent in "
+        "the window, stacked by direction (input vs output), showing where "
+        "token spend concentrates across the pipeline.",
+    ),
+    (
+        "sum_duration_ms", "Duration by agent", "duration (ms)", _BAR_AGENT,
+        "Total wall-clock duration each pipeline agent spent running in the "
+        "window, showing where time is spent across the pipeline.",
+    ),
     # Blended time-series line charts (sourced from blended weekly-aggregate rows).
-    ("count_issues",             "Throughput (issues per week)",                    "issues",      _LINE),
-    ("ave_cost_usd-issue",       "Cost per completed issue",                        "cost (USD)",  _LINE),
-    ("ratio_value_add-issue",    "Value-add ratio",                                 "ratio (0-1)", _LINE),
-    ("ratio_classification_mix", "Classification mix (feature and research / total)", "ratio (0-1)", _LINE),
-    ("ratio_cache_efficiency",   "Cache efficiency (cache reads / total cache tokens)", "ratio (0-1)", _LINE),
-    ("ratio_error_rate",         "Blocked/failed rate per invocation",              "ratio (0-1)", _LINE),
+    (
+        "count_issues", "Throughput (issues per week)", "issues", _LINE,
+        "The number of distinct issues the pipeline processed in each "
+        "period, a measure of overall delivery throughput.",
+    ),
+    (
+        "ave_cost_usd-issue", "Cost per completed issue", "cost (USD)", _LINE,
+        "Average Anthropic API spend (USD) per completed issue in the "
+        "period, a unit-economics view of pipeline cost.",
+    ),
+    (
+        "ratio_value_add-issue", "Value-add ratio", "ratio (0-1)", _LINE,
+        "The share of agent invocations in the period classified as "
+        "value-add work (feature or research) rather than overhead, with "
+        "a spike carve-out applied by the metrics aggregator.",
+    ),
+    (
+        "ratio_classification_mix",
+        "Classification mix (feature and research / total)",
+        "ratio (0-1)", _LINE,
+        "The proportion of invocations classified as feature or research "
+        "work versus the total, reflecting the balance between "
+        "forward-looking work and maintenance/overhead.",
+    ),
+    (
+        "ratio_cache_efficiency",
+        "Cache efficiency (cache reads / total cache tokens)",
+        "ratio (0-1)", _LINE,
+        "The share of total cache tokens that were cache reads rather than "
+        "cache writes, measuring how effectively the pipeline reuses "
+        "prompt caching across invocations.",
+    ),
+    (
+        "ratio_error_rate", "Blocked/failed rate per invocation",
+        "ratio (0-1)", _LINE,
+        "The proportion of agent invocations in the period that ended in a "
+        "blocked or failed outcome, a reliability signal for the pipeline.",
+    ),
 ]
 
-_KNOWN_FIELD_NAMES = {m[0] for m in _KNOWN_METRICS}
+def _flatten_field(field) -> set:
+    """A _BAR_AGENT_STACKED entry's field is a (field_in, field_out) tuple;
+    every other entry's field is a plain string. Flatten both shapes to the
+    set of raw record keys they consume, so the dynamic-discovery loop below
+    can exclude them -- otherwise sum_input_tokens/sum_output_tokens would
+    also show up a second time as generic auto-discovered line charts."""
+    return set(field) if isinstance(field, tuple) else {field}
+
+
+_KNOWN_FIELD_NAMES: set = set()
+for _m in _KNOWN_METRICS:
+    _KNOWN_FIELD_NAMES |= _flatten_field(_m[0])
+del _m
+
+
+def _generic_description(field: str) -> str:
+    """Fallback description for a scalar aggregate field discovered at
+    runtime that is not yet listed in _KNOWN_METRICS with its own text."""
+    return (
+        f"Additional aggregate metric discovered from the metrics records "
+        f"(field '{field}'); no further description has been written for "
+        f"it yet."
+    )
+
+
+def _slugify(text: str) -> str:
+    """A stable, URL-safe anchor id for a chart's H2 heading."""
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug or "section"
+
+
+def _resolve_repo_name() -> str:
+    """Best-effort repo name for the report's subtitle.
+
+    Tries $GITHUB_REPOSITORY (owner/repo, set by the orchestrator workflow)
+    first, then falls back to parsing the local git remote 'origin' URL.
+    Never raises -- a report with a generic subtitle is far better than no
+    report at all over a cosmetic field.
+    """
+    env_repo = os.environ.get("GITHUB_REPOSITORY")
+    if env_repo:
+        return env_repo.rstrip("/").rsplit("/", 1)[-1]
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=True,
+        )
+        name = result.stdout.strip().rstrip("/").rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        return name or "unknown repository"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown repository"
 
 # Fields present in every aggregate record that are not plottable metrics.
 _NON_METRIC_FIELDS = frozenset({
@@ -242,22 +358,33 @@ def prepare_report_data(records: list, now: datetime) -> list:
             if key in seen_fields:
                 continue
             if isinstance(val, (int, float)):
-                extra_fields.append((key, key, _infer_ylabel(key), _LINE))
+                extra_fields.append((key, key, _infer_ylabel(key), _LINE, _generic_description(key)))
             seen_fields.add(key)
 
     result = []
-    for field, title, ylabel, chart_type in list(_KNOWN_METRICS) + extra_fields:
-        if chart_type == _BAR_AGENT:
+    for field, title, ylabel, chart_type, description in list(_KNOWN_METRICS) + extra_fields:
+        if chart_type == _BAR_AGENT_STACKED:
+            field_in, field_out = field
+            desc = _build_bar_agent_stacked(
+                title, ylabel,
+                per_agent_week_sorted, per_agent_day_sorted,
+                cutoff_12mo, cutoff_2mo,
+                field_in, field_out, label_in="input", label_out="output",
+                description=description,
+            )
+        elif chart_type == _BAR_AGENT:
             desc = _build_bar_agent(
                 field, title, ylabel,
                 per_agent_week_sorted, per_agent_day_sorted,
                 cutoff_12mo, cutoff_2mo,
+                description=description,
             )
         else:
             desc = _build_line(
                 field, title, ylabel,
                 blended_week_sorted, blended_day_sorted,
                 cutoff_12mo, cutoff_2mo,
+                description=description,
             )
         if desc is not None:
             result.append(desc)
@@ -273,6 +400,7 @@ def _build_line(
     blended_day: list,
     cutoff_12mo: datetime,
     cutoff_2mo: datetime,
+    description: str = "",
 ) -> Optional[dict]:
     week_points = []
     for rec in blended_week:
@@ -314,9 +442,17 @@ def _build_line(
         "field": field,
         "title": title,
         "ylabel": ylabel,
+        "description": description,
         "chart_type": _LINE,
         "data_12mo": data_12mo,
         "data_2mo": data_2mo,
+        # Window bounds, kept alongside the data so the renderer can force
+        # each pane's x-axis to span the full declared window (12 months /
+        # 2 months) even when the actual data inside it is sparse or short
+        # -- a thin cluster of points must not visually imply a short
+        # window just because matplotlib's default autoscale hugs the data.
+        "cutoff_12mo": cutoff_12mo,
+        "cutoff_2mo": cutoff_2mo,
     }
 
 
@@ -328,6 +464,7 @@ def _build_bar_agent(
     per_agent_day: list,
     cutoff_12mo: datetime,
     cutoff_2mo: datetime,
+    description: str = "",
 ) -> Optional[dict]:
     series_week: dict = {}
     for rec in per_agent_week:
@@ -371,10 +508,79 @@ def _build_bar_agent(
         "field": field,
         "title": title,
         "ylabel": ylabel,
+        "description": description,
         "chart_type": _BAR_AGENT,
         "agents": agents,
         "series_week": series_week,
         "series_day": series_day,
+        "cutoff_12mo": cutoff_12mo,
+        "cutoff_2mo": cutoff_2mo,
+    }
+
+
+def _collect_agent_series(records: list, field: str) -> dict:
+    """{agent_id: [(dt, float), ...]} for one scalar field across per-agent
+    breakdown records -- the shared accumulation _build_bar_agent and
+    _build_bar_agent_stacked both need, one field at a time."""
+    series: dict = {}
+    for rec in records:
+        val = rec.get(field)
+        if val is None:
+            continue
+        dt = _parse_ts(rec.get("timestamp_start"))
+        if dt is None:
+            continue
+        agent = rec.get("agent_id", "")
+        if not agent:
+            continue
+        try:
+            fval = float(val)
+        except (TypeError, ValueError):
+            continue
+        series.setdefault(agent, []).append((dt, fval))
+    return series
+
+
+def _build_bar_agent_stacked(
+    title: str,
+    ylabel: str,
+    per_agent_week: list,
+    per_agent_day: list,
+    cutoff_12mo: datetime,
+    cutoff_2mo: datetime,
+    field_in: str,
+    field_out: str,
+    label_in: str = "input",
+    label_out: str = "output",
+    description: str = "",
+) -> Optional[dict]:
+    """Like _build_bar_agent, but for two components stacked in one bar per
+    agent (e.g. input vs output tokens) instead of a single summed field."""
+    series_week_in = _collect_agent_series(per_agent_week, field_in)
+    series_week_out = _collect_agent_series(per_agent_week, field_out)
+    series_day_in = _collect_agent_series(per_agent_day, field_in)
+    series_day_out = _collect_agent_series(per_agent_day, field_out)
+
+    if not (series_week_in or series_week_out or series_day_in or series_day_out):
+        return None
+
+    agents = sorted(
+        set(series_week_in) | set(series_week_out)
+        | set(series_day_in) | set(series_day_out)
+    )
+    return {
+        "field": f"{field_in}:{field_out}",
+        "title": title,
+        "ylabel": ylabel,
+        "description": description,
+        "chart_type": _BAR_AGENT_STACKED,
+        "agents": agents,
+        "label_in": label_in,
+        "label_out": label_out,
+        "series_week_in": series_week_in,
+        "series_week_out": series_week_out,
+        "series_day_in": series_day_in,
+        "series_day_out": series_day_out,
         "cutoff_12mo": cutoff_12mo,
         "cutoff_2mo": cutoff_2mo,
     }
@@ -395,19 +601,38 @@ def _figure_to_b64(fig) -> str:
 
 
 def _render_line_pair(desc: dict) -> tuple:
-    """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a line chart row."""
+    """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a line chart row.
+
+    Each pane's x-axis is pinned to its full declared window (the 12-month
+    window on the left, the 2-month window on the right) via set_xlim, not
+    left to matplotlib's default autoscale-to-data-range behavior. Without
+    this, a window with only a few early data points (a metric just added,
+    or a gap like the one metrics-aggregator backfilling fixed) renders with
+    an x-axis that silently shrinks to hug those points -- visually implying
+    a short window when the declared window is actually 12 months / 2 months.
+    """
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
 
+    windows = [
+        ("12 months", desc["data_12mo"], desc.get("cutoff_12mo"), "weeks", WINDOW_12MO_WEEKS),
+        ("2 months", desc["data_2mo"], desc.get("cutoff_2mo"), "days", WINDOW_2MO_DAYS),
+    ]
+
     imgs = []
-    for window_label, data in [("12 months", desc["data_12mo"]), ("2 months", desc["data_2mo"])]:
+    for window_label, data, cutoff, unit, amount in windows:
         fig, ax = plt.subplots(figsize=(5.5, 3.4))
         if data:
             xs = [dt for dt, _ in data]
             ys = [v for _, v in data]
             ax.plot(xs, ys, marker="o", markersize=3, linewidth=1.5)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-            fig.autofmt_xdate(rotation=30, ha="right")
+        if cutoff is not None:
+            window_end = cutoff + (
+                timedelta(weeks=amount) if unit == "weeks" else timedelta(days=amount)
+            )
+            ax.set_xlim(mdates.date2num(cutoff), mdates.date2num(window_end))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        fig.autofmt_xdate(rotation=30, ha="right")
         ax.set_title(f"{desc['title']} ({window_label})")
         ax.set_ylabel(desc["ylabel"])
         ax.grid(True, alpha=0.3)
@@ -453,13 +678,62 @@ def _render_bar_agent_pair(desc: dict) -> tuple:
     return imgs[0], imgs[1]
 
 
+def _render_bar_agent_stacked_pair(desc: dict) -> tuple:
+    """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a stacked
+    by-agent bar row -- e.g. input vs output tokens, one color per
+    component, stacked in a single bar per agent."""
+    import matplotlib.pyplot as plt
+
+    imgs = []
+    for window_label, in_key, out_key, cutoff in [
+        ("12 months", "series_week_in", "series_week_out", desc["cutoff_12mo"]),
+        ("2 months",  "series_day_in",  "series_day_out",  desc["cutoff_2mo"]),
+    ]:
+        fig, ax = plt.subplots(figsize=(5.5, 3.4))
+        series_in = desc[in_key]
+        series_out = desc[out_key]
+
+        def _totals(series, cutoff=cutoff):
+            return {
+                agent: sum(v for dt, v in series.get(agent, []) if dt >= cutoff)
+                for agent in desc["agents"]
+            }
+
+        totals_in = _totals(series_in)
+        totals_out = _totals(series_out)
+        active = [a for a in desc["agents"] if totals_in[a] > 0 or totals_out[a] > 0]
+        if not active:
+            # No data falls within the cutoff window -- fall back to the full
+            # available range, same short-range behavior as the single-field
+            # by-agent bar chart (issue #547 PR review RV-001).
+            totals_in = {a: sum(v for _, v in series_in.get(a, [])) for a in desc["agents"]}
+            totals_out = {a: sum(v for _, v in series_out.get(a, [])) for a in desc["agents"]}
+            active = [a for a in desc["agents"] if totals_in[a] > 0 or totals_out[a] > 0]
+        if active:
+            xs = range(len(active))
+            in_vals = [totals_in[a] for a in active]
+            out_vals = [totals_out[a] for a in active]
+            ax.bar(xs, in_vals, label=desc["label_in"])
+            ax.bar(xs, out_vals, bottom=in_vals, label=desc["label_out"])
+            ax.set_xticks(list(xs))
+            ax.set_xticklabels(active, rotation=30, ha="right", fontsize=8)
+            ax.legend(fontsize=7)
+        ax.set_title(f"{desc['title']} ({window_label})")
+        ax.set_ylabel(desc["ylabel"])
+        ax.grid(True, alpha=0.3, axis="y")
+        imgs.append(_figure_to_b64(fig))
+    return imgs[0], imgs[1]
+
+
 def render_charts(chart_descriptors: list) -> list:
     """Render each descriptor to a (img_12mo_b64, img_2mo_b64) pair of PNG base64 strings."""
     import matplotlib
     matplotlib.use("Agg")
     pairs = []
     for desc in chart_descriptors:
-        if desc["chart_type"] == _BAR_AGENT:
+        if desc["chart_type"] == _BAR_AGENT_STACKED:
+            pairs.append(_render_bar_agent_stacked_pair(desc))
+        elif desc["chart_type"] == _BAR_AGENT:
             pairs.append(_render_bar_agent_pair(desc))
         else:
             pairs.append(_render_line_pair(desc))
@@ -480,6 +754,17 @@ _HTML_HEADER = (
     "  body { font-family: sans-serif; font-size: 10pt; }\n"
     "  .page { break-after: page; }\n"
     "  .page:last-child { break-after: auto; }\n"
+    "  .front-matter { break-after: page; }\n"
+    "  .front-matter h1 { font-size: 20pt; margin: 0 0 2mm; }\n"
+    "  .front-matter .subtitle { font-size: 13pt; color: #374151; margin: 0 0 2mm; }\n"
+    "  .front-matter .date { font-size: 10pt; color: #6b7280; margin: 0 0 8mm; }\n"
+    "  .front-matter h2 { font-size: 13pt; margin: 6mm 0 2mm; }\n"
+    "  .front-matter p { margin: 0 0 4mm; }\n"
+    "  .front-matter ul.toc { list-style: none; padding-left: 0; margin: 0; }\n"
+    "  .front-matter ul.toc li { margin: 0 0 1.5mm; }\n"
+    "  .front-matter ul.toc a { color: inherit; text-decoration: none; }\n"
+    "  h2.metric-title { font-size: 12pt; margin: 0 0 1mm; }\n"
+    "  p.metric-desc { font-size: 9pt; color: #374151; margin: 0 0 2mm; }\n"
     "  .row { display: flex; align-items: flex-start; margin-bottom: 4mm; }\n"
     "  .row img { width: 50%; height: auto; }\n"
     "</style>\n"
@@ -490,15 +775,62 @@ _HTML_HEADER = (
 _HTML_FOOTER = "</body>\n</html>\n"
 
 
-def build_html(chart_descriptors: list, chart_pairs: list) -> str:
+def _build_front_matter(chart_descriptors: list, now: datetime, repo_name: str) -> str:
+    """Title/subtitle/date, an "About this Document" blurb, and a Table of
+    Contents listing every metric section by its H2 anchor -- mirrors the
+    front-matter convention used for generated reports elsewhere (title,
+    subtitle, date, About, Table of Contents), adapted to this report's own
+    chart-based layout rather than a markdown pipeline."""
+    date_str = now.strftime("%B %d, %Y")
+    toc_items = "".join(
+        f'<li><a href="#{_slugify(desc["title"])}">{html.escape(desc["title"])}</a></li>'
+        for desc in chart_descriptors
+    )
+    return (
+        '<div class="front-matter">\n'
+        f"<h1>{html.escape(DOC_TITLE)}</h1>\n"
+        f'<p class="subtitle">{html.escape(repo_name)}</p>\n'
+        f'<p class="date">{html.escape(date_str)}</p>\n'
+        "<h2>About this Document</h2>\n"
+        f"<p>{html.escape(ABOUT_TEXT)}</p>\n"
+        "<h2>Table of Contents</h2>\n"
+        f'<ul class="toc">{toc_items}</ul>\n'
+        "</div>"
+    )
+
+
+def build_html(
+    chart_descriptors: list, chart_pairs: list,
+    now: Optional[datetime] = None, repo_name: Optional[str] = None,
+) -> str:
     """Assemble an HTML document with base64-embedded chart images.
 
-    Groups chart rows into pages of ROWS_PER_PAGE using CSS break-after: page.
+    Front matter (title/subtitle/date, About this Document, Table of
+    Contents) renders on its own page, followed by one H2-headed section per
+    metric -- its title, a short description, then its chart pair. Chart
+    rows are grouped into pages of ROWS_PER_PAGE using CSS break-after: page;
+    each metric's heading/description stay attached to its own chart row so
+    a page break never separates them from the charts they describe.
+
+    now/repo_name default to the real current time / a resolved repo name
+    when omitted, so a caller that only cares about the chart layout (tests,
+    ad hoc inspection) need not supply them.
     """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if repo_name is None:
+        repo_name = _resolve_repo_name()
+
+    front_matter = _build_front_matter(chart_descriptors, now, repo_name)
+
     rows_html = []
     for desc, (img_12mo, img_2mo) in zip(chart_descriptors, chart_pairs):
         title = html.escape(desc["title"])
+        anchor = _slugify(desc["title"])
+        description = html.escape(desc.get("description", ""))
         row = (
+            f'<h2 class="metric-title" id="{anchor}">{title}</h2>\n'
+            f'<p class="metric-desc">{description}</p>\n'
             '<div class="row">'
             f'<img src="data:image/png;base64,{img_12mo}" alt="{title} 12mo">'
             f'<img src="data:image/png;base64,{img_2mo}" alt="{title} 2mo">'
@@ -512,7 +844,7 @@ def build_html(chart_descriptors: list, chart_pairs: list) -> str:
         page = '<div class="page">\n' + "\n".join(page_rows) + "\n</div>"
         pages.append(page)
 
-    return _HTML_HEADER + "\n".join(pages) + "\n" + _HTML_FOOTER
+    return _HTML_HEADER + front_matter + "\n" + "\n".join(pages) + "\n" + _HTML_FOOTER
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +895,8 @@ def main() -> None:
         return
 
     chart_pairs = render_charts(chart_descriptors)
-    html_doc = build_html(chart_descriptors, chart_pairs)
+    repo_name = _resolve_repo_name()
+    html_doc = build_html(chart_descriptors, chart_pairs, now, repo_name)
     render_pdf(html_doc, args.output)
     print(f"metrics_report: PDF written to {args.output}", file=sys.stderr)
 

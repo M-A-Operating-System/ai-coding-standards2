@@ -13,6 +13,7 @@ Covers the acceptance scenarios from docs/features/generate-weekly-performance-r
   Scenario R9 (metric selection documented in script) -> TestDocumentation
 """
 
+import html
 import importlib
 import inspect
 import json
@@ -269,6 +270,82 @@ class TestHtmlLayout:
 
 
 # ---------------------------------------------------------------------------
+# Front matter: title/subtitle/date, About this Document, Table of Contents,
+# and per-metric H2 headings + descriptions placed between the heading and
+# the charts.
+# ---------------------------------------------------------------------------
+
+class TestFrontMatter:
+    def _desc(self, field="count_issues", title="Throughput", description="Issues processed."):
+        return {
+            "field": field, "title": title, "ylabel": "issues",
+            "description": description,
+            "chart_type": _LINE, "data_12mo": [], "data_2mo": [],
+        }
+
+    def _fake_pair(self):
+        return "aGVsbG8=", "aGVsbG8="
+
+    def test_title_subtitle_and_date_are_rendered(self):
+        import metrics_report as mr
+        now = _utc("2026-11-09T00:00:00Z")
+        html_doc = build_html([], [], now=now, repo_name="ai-coding-standards2")
+        assert html.escape(mr.DOC_TITLE) in html_doc
+        assert "ai-coding-standards2" in html_doc
+        assert "November 09, 2026" in html_doc
+
+    def test_about_this_document_section_is_present(self):
+        import metrics_report as mr
+        html_doc = build_html([], [], now=_utc("2026-11-09T00:00:00Z"), repo_name="repo")
+        assert "About this Document" in html_doc
+        assert mr.ABOUT_TEXT in html_doc
+        assert "github.com/M-A-Operating-System/ai-coding-standards2" in html_doc
+
+    def test_table_of_contents_links_to_every_metric_anchor(self):
+        descs = [
+            self._desc("count_issues", "Throughput (issues per week)"),
+            self._desc("sum_cost_usd", "Cost by agent"),
+        ]
+        pairs = [self._fake_pair() for _ in descs]
+        html_doc = build_html(descs, pairs, now=_utc("2026-11-09T00:00:00Z"), repo_name="repo")
+        assert "Table of Contents" in html_doc
+        assert '<a href="#throughput-issues-per-week">Throughput (issues per week)</a>' in html_doc
+        assert '<a href="#cost-by-agent">Cost by agent</a>' in html_doc
+
+    def test_each_metric_gets_an_h2_heading_with_matching_anchor(self):
+        descs = [self._desc("sum_cost_usd", "Cost by agent")]
+        pairs = [self._fake_pair()]
+        html_doc = build_html(descs, pairs, now=_utc("2026-11-09T00:00:00Z"), repo_name="repo")
+        assert '<h2 class="metric-title" id="cost-by-agent">Cost by agent</h2>' in html_doc
+
+    def test_description_is_placed_between_heading_and_charts(self):
+        descs = [self._desc("sum_cost_usd", "Cost by agent", description="Spend per agent.")]
+        pairs = [self._fake_pair()]
+        html_doc = build_html(descs, pairs, now=_utc("2026-11-09T00:00:00Z"), repo_name="repo")
+        heading_pos = html_doc.index('<h2 class="metric-title"')
+        desc_pos = html_doc.index("Spend per agent.")
+        row_pos = html_doc.index('<div class="row">')
+        assert heading_pos < desc_pos < row_pos, (
+            "metric description must sit between the H2 heading and the chart row"
+        )
+
+    def test_front_matter_precedes_the_first_chart_page(self):
+        descs = [self._desc()]
+        pairs = [self._fake_pair()]
+        html_doc = build_html(descs, pairs, now=_utc("2026-11-09T00:00:00Z"), repo_name="repo")
+        assert html_doc.index('class="front-matter"') < html_doc.index('class="page"')
+
+    def test_build_html_without_now_or_repo_name_still_works(self):
+        """now/repo_name are optional -- older callers (and most existing
+        tests in this file) that only care about chart layout must not be
+        forced to supply them."""
+        descs = [self._desc()]
+        pairs = [self._fake_pair()]
+        html_doc = build_html(descs, pairs)
+        assert "front-matter" in html_doc
+
+
+# ---------------------------------------------------------------------------
 # R3: Time-series metrics use line pair; by-agent metrics use bar_agent
 # ---------------------------------------------------------------------------
 
@@ -355,6 +432,17 @@ class TestChartTypes:
         # Day rows feed only the right chart; left chart (data_12mo) uses week rows.
         assert throughput["data_12mo"] == []
 
+    def test_line_descriptor_carries_both_window_cutoffs(self):
+        """The renderer needs cutoff_12mo/cutoff_2mo to pin each pane's
+        x-axis to its full declared window regardless of how sparse the
+        actual data is -- prepare_report_data must always attach them."""
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [_blended(_week_ts(now, 2), count_issues=5)]
+        descs = prepare_report_data(records, now)
+        throughput = next(d for d in descs if d["field"] == "count_issues")
+        assert throughput["cutoff_12mo"] == now - timedelta(weeks=WINDOW_12MO_WEEKS)
+        assert throughput["cutoff_2mo"] == now - timedelta(days=WINDOW_2MO_DAYS)
+
 
 # ---------------------------------------------------------------------------
 # R4: Cost and efficiency charts carry explicit unit labels
@@ -381,11 +469,14 @@ class TestUnitLabels:
 
     def test_known_metrics_carry_explicit_unit_labels(self):
         from metrics_report import _KNOWN_METRICS
-        for field, title, ylabel, _ in _KNOWN_METRICS:
-            assert ylabel, f"{field} has no ylabel"
-            if "usd" in field.lower():
+        for field, title, ylabel, _, _desc in _KNOWN_METRICS:
+            # field is a plain string for most entries, or a (field_in,
+            # field_out) tuple for a stacked-bar entry (e.g. tokens by agent).
+            field_text = " ".join(field) if isinstance(field, tuple) else field
+            assert ylabel, f"{field}: has no ylabel"
+            if "usd" in field_text.lower():
                 assert "USD" in ylabel, f"{field}: expected USD in ylabel, got {ylabel!r}"
-            if "tokens" in field.lower():
+            if "tokens" in field_text.lower():
                 assert "tokens" in ylabel, f"{field}: expected tokens in ylabel, got {ylabel!r}"
 
     def test_ylabel_in_descriptor_matches_expected_unit(self):
@@ -466,8 +557,200 @@ class TestByAgentChart:
 
 
 # ---------------------------------------------------------------------------
+# Tokens by agent -- stacked bar (input vs output tokens), placed right
+# after Cost by agent in the metric priority order.
+# ---------------------------------------------------------------------------
+
+class TestTokensByAgentStackedBar:
+    def test_tokens_by_agent_descriptor_is_stacked_bar(self):
+        from metrics_report import _BAR_AGENT_STACKED
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [
+            _agent_rec("03_execute/coder", _week_ts(now, 1),
+                       sum_input_tokens=100, sum_output_tokens=40),
+        ]
+        descs = prepare_report_data(records, now)
+        tokens_desc = next((d for d in descs if d["title"] == "Tokens by agent"), None)
+        assert tokens_desc is not None
+        assert tokens_desc["chart_type"] == _BAR_AGENT_STACKED
+        assert "03_execute/coder" in tokens_desc["agents"]
+        assert "tokens" in tokens_desc["ylabel"]
+
+    def test_tokens_by_agent_carries_separate_in_and_out_series(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [
+            _agent_rec("coder", _week_ts(now, 1), sum_input_tokens=100, sum_output_tokens=40),
+        ]
+        descs = prepare_report_data(records, now)
+        tokens_desc = next(d for d in descs if d["title"] == "Tokens by agent")
+        in_total = sum(v for _, v in tokens_desc["series_week_in"]["coder"])
+        out_total = sum(v for _, v in tokens_desc["series_week_out"]["coder"])
+        assert in_total == 100
+        assert out_total == 40
+
+    def test_tokens_by_agent_comes_right_after_cost_by_agent(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [
+            _agent_rec("coder", _week_ts(now, 1),
+                       sum_cost_usd=1.0, sum_duration_ms=500,
+                       sum_input_tokens=100, sum_output_tokens=40),
+        ]
+        descs = prepare_report_data(records, now)
+        titles = [d["title"] for d in descs]
+        cost_idx = titles.index("Cost by agent")
+        tokens_idx = titles.index("Tokens by agent")
+        duration_idx = titles.index("Duration by agent")
+        assert tokens_idx == cost_idx + 1
+        assert duration_idx == tokens_idx + 1
+
+    def test_raw_token_fields_are_not_also_auto_discovered_as_line_charts(self):
+        """sum_input_tokens/sum_output_tokens are already covered by the
+        Tokens by agent stacked bar -- they must not also appear a second
+        time as generic auto-discovered blended-line charts."""
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [
+            _blended(_week_ts(now, 1), sum_input_tokens=100, sum_output_tokens=40),
+        ]
+        descs = prepare_report_data(records, now)
+        fields = [d["field"] for d in descs]
+        assert "sum_input_tokens" not in fields
+        assert "sum_output_tokens" not in fields
+
+    def test_no_token_data_omits_the_metric(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [_agent_rec("coder", _week_ts(now, 1), sum_cost_usd=1.0)]
+        descs = prepare_report_data(records, now)
+        assert all(d["title"] != "Tokens by agent" for d in descs)
+
+    def test_render_stacks_input_below_output_with_a_legend(self):
+        """_render_bar_agent_stacked_pair must draw two ax.bar() calls per
+        window -- the input series, then the output series stacked on top
+        via bottom= -- and label them so the chart has a legend."""
+        import metrics_report as mr
+
+        now = _utc("2026-10-06T00:00:00Z")
+        desc = {
+            "field": "sum_input_tokens:sum_output_tokens",
+            "title": "Tokens by agent", "ylabel": "tokens",
+            "description": "d",
+            "chart_type": mr._BAR_AGENT_STACKED,
+            "agents": ["coder"],
+            "label_in": "input", "label_out": "output",
+            "series_week_in": {"coder": [(now, 100.0)]},
+            "series_week_out": {"coder": [(now, 40.0)]},
+            "series_day_in": {"coder": [(now, 10.0)]},
+            "series_day_out": {"coder": [(now, 4.0)]},
+            "cutoff_12mo": now - timedelta(weeks=WINDOW_12MO_WEEKS),
+            "cutoff_2mo": now - timedelta(days=WINDOW_2MO_DAYS),
+        }
+
+        mock_ax = MagicMock()
+        mock_fig = MagicMock()
+        fake_plt = MagicMock()
+        fake_plt.subplots.return_value = (mock_fig, mock_ax)
+        fake_matplotlib = MagicMock()
+        fake_matplotlib.pyplot = fake_plt
+
+        with patch.dict("sys.modules", {
+            "matplotlib": fake_matplotlib,
+            "matplotlib.pyplot": fake_plt,
+        }), patch.object(mr, "_figure_to_b64", return_value="x"):
+            mr._render_bar_agent_stacked_pair(desc)
+
+        # 2 windows x 2 stacked series each = 4 bar() calls.
+        assert mock_ax.bar.call_count == 4
+        # The second call in each window pair must stack on the first via bottom=.
+        first_call, second_call = mock_ax.bar.call_args_list[0], mock_ax.bar.call_args_list[1]
+        assert "bottom" not in first_call.kwargs
+        assert "bottom" in second_call.kwargs
+        assert first_call.kwargs.get("label") == "input"
+        assert second_call.kwargs.get("label") == "output"
+        assert mock_ax.legend.call_count == 2
+
+
+# ---------------------------------------------------------------------------
 # R7: Short data range renders without failing
 # ---------------------------------------------------------------------------
+
+class TestLineChartFullWindowXAxis:
+    """_render_line_pair must pin each pane's x-axis to its full declared
+    window (cutoff -> cutoff + window length) via set_xlim, not leave it to
+    matplotlib's default autoscale-to-data-range -- a sparse or empty window
+    must still visually read as the full 12-month/2-month span, not shrink
+    to hug whatever few points happen to exist."""
+
+    def _render_with_mock(self, desc):
+        import metrics_report as mr
+
+        mock_ax = MagicMock()
+        mock_fig = MagicMock()
+        fake_plt = MagicMock()
+        fake_plt.subplots.return_value = (mock_fig, mock_ax)
+        fake_mdates = MagicMock()
+        fake_mdates.date2num = lambda d: d  # identity -- compare datetimes directly
+        fake_matplotlib = MagicMock()
+        fake_matplotlib.pyplot = fake_plt
+        fake_matplotlib.dates = fake_mdates
+
+        with patch.dict("sys.modules", {
+            "matplotlib": fake_matplotlib,
+            "matplotlib.pyplot": fake_plt,
+            "matplotlib.dates": fake_mdates,
+        }), patch.object(mr, "_figure_to_b64", return_value="x"):
+            mr._render_line_pair(desc)
+
+        return mock_ax
+
+    def test_sparse_12mo_data_still_spans_the_full_window(self):
+        import metrics_report as mr
+
+        now = _utc("2026-10-06T00:00:00Z")
+        cutoff_12mo = now - timedelta(weeks=WINDOW_12MO_WEEKS)
+        cutoff_2mo = now - timedelta(days=WINDOW_2MO_DAYS)
+        # A single data point well inside the window -- the regression this
+        # guards against is matplotlib autoscaling to just this one point.
+        single_point = cutoff_12mo + timedelta(weeks=1)
+        desc = {
+            "field": "count_issues", "title": "Throughput", "ylabel": "issues",
+            "data_12mo": [(single_point, 3)], "data_2mo": [],
+            "cutoff_12mo": cutoff_12mo, "cutoff_2mo": cutoff_2mo,
+        }
+        mock_ax = self._render_with_mock(desc)
+
+        assert mock_ax.set_xlim.call_count == 2
+        left_call, right_call = mock_ax.set_xlim.call_args_list
+        assert left_call.args == (cutoff_12mo, cutoff_12mo + timedelta(weeks=WINDOW_12MO_WEEKS))
+        assert right_call.args == (cutoff_2mo, cutoff_2mo + timedelta(days=WINDOW_2MO_DAYS))
+
+    def test_empty_data_still_spans_the_full_window(self):
+        """No data at all in either window must still produce a full-span
+        x-axis, not a bare/empty default 0-1 axis."""
+        now = _utc("2026-10-06T00:00:00Z")
+        cutoff_12mo = now - timedelta(weeks=WINDOW_12MO_WEEKS)
+        cutoff_2mo = now - timedelta(days=WINDOW_2MO_DAYS)
+        desc = {
+            "field": "count_issues", "title": "Throughput", "ylabel": "issues",
+            "data_12mo": [], "data_2mo": [],
+            "cutoff_12mo": cutoff_12mo, "cutoff_2mo": cutoff_2mo,
+        }
+        mock_ax = self._render_with_mock(desc)
+
+        assert mock_ax.set_xlim.call_count == 2
+        left_call, right_call = mock_ax.set_xlim.call_args_list
+        assert left_call.args == (cutoff_12mo, cutoff_12mo + timedelta(weeks=WINDOW_12MO_WEEKS))
+        assert right_call.args == (cutoff_2mo, cutoff_2mo + timedelta(days=WINDOW_2MO_DAYS))
+
+    def test_no_cutoff_present_skips_xlim_without_error(self):
+        """A hand-built descriptor without cutoff_12mo/cutoff_2mo (as older
+        callers or ad hoc tests might construct) must not crash -- set_xlim
+        is simply skipped for that pane rather than required."""
+        desc = {
+            "field": "f", "title": "T", "ylabel": "count",
+            "data_12mo": [], "data_2mo": [],
+        }
+        mock_ax = self._render_with_mock(desc)
+        mock_ax.set_xlim.assert_not_called()
+
 
 class TestShortRange:
     def test_fewer_than_12mo_weeks_renders_available_range(self):
@@ -674,14 +957,25 @@ class TestDocumentation:
 
     def test_each_known_metric_has_nonempty_title_and_ylabel(self):
         from metrics_report import _KNOWN_METRICS
-        for field, title, ylabel, chart_type in _KNOWN_METRICS:
+        for field, title, ylabel, chart_type, description in _KNOWN_METRICS:
             assert title.strip(), f"{field}: empty title"
             assert ylabel.strip(), f"{field}: empty ylabel"
+            assert description.strip(), f"{field}: empty description"
 
-    def test_docstring_says_bar_charts_not_stacked_bar(self):
+    def test_docstring_documents_stacked_bar_for_tokens_by_agent_only(self):
+        """Cost-by-agent and duration-by-agent stay plain (non-stacked)
+        single-value bars; only tokens-by-agent legitimately stacks its two
+        components (input vs output) in one bar per agent."""
         import metrics_report
-        doc = metrics_report.__doc__
-        assert "stacked bar" not in doc.lower()
+        doc = metrics_report.__doc__.lower()
+        assert "stacked bar" in doc
+        assert "tokens by agent" in doc
+        from metrics_report import _KNOWN_METRICS, _BAR_AGENT, _BAR_AGENT_STACKED
+        for field, title, ylabel, chart_type, _desc in _KNOWN_METRICS:
+            if chart_type == _BAR_AGENT:
+                assert "stacked" not in title.lower(), f"{title}: a plain bar chart must not claim to be stacked"
+            if chart_type == _BAR_AGENT_STACKED:
+                assert isinstance(field, tuple) and len(field) == 2
 
     def test_commit_report_sh_exists(self):
         script_path = REPO_ROOT / "scripts" / "commit-report.sh"
