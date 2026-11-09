@@ -125,6 +125,7 @@ class TestMainStopMarkerBehavior:
         args.print_prompt = False
         args.interactive_result = False
         args.confirm_gate = False
+        args.agent = None
         for k, v in kwargs.items():
             setattr(args, k, v)
         return args

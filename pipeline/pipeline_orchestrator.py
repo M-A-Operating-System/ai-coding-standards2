@@ -8402,7 +8402,11 @@ def parse_args() -> argparse.Namespace:
         metavar="AGENT",
         help=(
             "Agent name override (e.g. '01_product_docs/prd-writer'). "
-            "Required when using --print-prompt."
+            "Required when using --print-prompt, --interactive-result, or "
+            "--confirm-gate. Used on its own with --issue (no special flag), "
+            "it narrows an ordinary run to that one step on that one issue/PR "
+            "-- a real invocation, same eligibility checks as any other tick, "
+            "just scoped to a single named step instead of every eligible one."
         ),
     )
     p.add_argument(
@@ -9025,6 +9029,24 @@ def _wake(args) -> "Optional[RunContext]":
         agents = [a for a in agents if a.agent == args.agent]
         if not agents:
             log.error("--interactive-result: unknown --agent %r", args.agent)
+            sys.exit(1)
+
+    # Plain targeted run: --agent given on its own (no --interactive-result,
+    # --confirm-gate, or --print-prompt), for a manual re-run of one specific
+    # step against one specific issue/PR -- e.g. the orchestrator workflow's
+    # manual dispatch inputs. Unlike --interactive-result, this really spawns
+    # the step (subprocess or script) rather than applying an already-written
+    # result.json. Scoping to one agent here, same as above, keeps a targeted
+    # run from also triggering some other, unrelated eligible step on the same
+    # issue (MI-3). pipeline_map above stays full so dependency lookups still
+    # resolve correctly for the narrowed agent.
+    elif args.agent:
+        if not args.issue:
+            log.error("--agent requires --issue (unless combined with --interactive-result, --confirm-gate, or --print-prompt)")
+            sys.exit(1)
+        agents = [a for a in agents if a.agent == args.agent]
+        if not agents:
+            log.error("--agent: unknown agent %r", args.agent)
             sys.exit(1)
 
     gh = GitHubClient(repo=args.repo, token=token)

@@ -2430,7 +2430,7 @@ class TestPhasesFilter:
             pipeline="pipeline.json", phases="01_product_docs",
             issue=None, kind=None, dry_run=True,
             headless=False, print_prompt=False, interactive_result=False,
-            manual_override=False, confirm_gate=False,
+            manual_override=False, confirm_gate=False, agent=None,
         )
 
         wi = _make_work_item_with_labels(1, set())
@@ -2476,6 +2476,28 @@ class TestPhasesFilter:
         assert "--phases" not in content, (
             "ai_orchestrator.yml must not pass --phases — the single workflow runs "
             "all phases so cross-phase dependencies resolve."
+        )
+
+    def test_manual_dispatch_can_target_a_specific_agent_alongside_an_issue(self):
+        """The workflow_dispatch form must expose an agent_name input, paired
+        with issue_number, so a manual run can re-trigger one specific
+        pipeline step on one specific issue/PR instead of waiting for every
+        eligible step to run. Guards both the input's declaration and that
+        it is actually threaded through to the orchestrator CLI as --agent,
+        requiring issue_number to be set too (pipeline_orchestrator.py's own
+        --agent-without-interactive-result path requires --issue)."""
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "ai_orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        content = path.read_text()
+        assert "agent_name:" in content, (
+            "ai_orchestrator.yml must declare a workflow_dispatch 'agent_name' input"
+        )
+        assert "AGENT_INPUT" in content and "--agent $AGENT_INPUT" in content, (
+            "ai_orchestrator.yml must pass agent_name through to the orchestrator as --agent"
+        )
+        assert "agent_name requires issue_number" in content, (
+            "ai_orchestrator.yml must reject agent_name given without issue_number "
+            "rather than silently dropping it or scanning every open item"
         )
 
 
@@ -4686,6 +4708,7 @@ class TestPriorityScheduling:
         args_mock.pipeline = MagicMock()
         args_mock.phases = None
         args_mock.interactive_result = False
+        args_mock.agent = None
         args_mock.confirm_gate = False
         mock_parse_args.return_value = args_mock
 
@@ -4752,6 +4775,7 @@ class TestPriorityScheduling:
         args_mock.phases = None
         args_mock.interactive_result = False
         args_mock.confirm_gate = False
+        args_mock.agent = None
         mock_parse_args.return_value = args_mock
 
         agent_def = self._make_agent_for_priority()

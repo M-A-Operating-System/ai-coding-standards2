@@ -47,6 +47,9 @@ on:
       issue_number:
         description: 'Process a single issue/PR number (leave blank for all)'
         required: false
+      agent_name:
+        description: 'Target a single step by its pipeline.json agent name (e.g. 03_execute/coder) -- requires issue_number too; leave blank to let every eligible step run as normal'
+        required: false
       dry_run:
         description: 'Dry run -- show what would trigger without executing'
         type: boolean
@@ -233,6 +236,7 @@ jobs:
         id: args
         env:
           ISSUE_INPUT: ${{ github.event.inputs.issue_number }}
+          AGENT_INPUT: ${{ github.event.inputs.agent_name }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
           EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -242,12 +246,21 @@ jobs:
 
           [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || { echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }
 
+          if [ -n "$AGENT_INPUT" ] && [ -z "$ISSUE_INPUT" ]; then
+            echo "ERROR: agent_name requires issue_number too" >&2
+            exit 1
+          fi
+
           if [ -n "$ISSUE_INPUT" ]; then
             ARGS="$ARGS --issue $ISSUE_INPUT"
           elif [ "$EVENT_NAME" = "issues" ]; then
             ARGS="$ARGS --issue $EVENT_ISSUE_NUMBER --kind issue"
           elif [ "$EVENT_NAME" = "pull_request" ]; then
             ARGS="$ARGS --issue $EVENT_PR_NUMBER --kind pr"
+          fi
+
+          if [ -n "$AGENT_INPUT" ]; then
+            ARGS="$ARGS --agent $AGENT_INPUT"
           fi
 
           if [ "$EVENT_DRY_RUN" = "true" ]; then

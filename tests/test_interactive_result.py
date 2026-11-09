@@ -122,6 +122,64 @@ class TestInteractiveResultRequiresIssue:
 
 
 # ---------------------------------------------------------------------------
+# _wake(): plain --agent targeting (no --interactive-result) also requires
+# --issue, and narrows ctx.agents the same way -- for a real invocation
+# rather than applying an already-written result.json. This is what the
+# orchestrator workflow's manual-dispatch agent_name input drives.
+# ---------------------------------------------------------------------------
+
+class TestPlainAgentTargetingRequiresIssue:
+    def test_agent_without_issue_exits_rather_than_scanning_every_open_item(self, monkeypatch):
+        monkeypatch.setattr(orch, "_ensure_gh_cli", lambda: None)
+        monkeypatch.setattr(orch, "_discover_github_token", lambda: "t")
+        monkeypatch.setattr(orch, "is_pipeline_paused", lambda: (False, None, None))
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, None))
+        gh = MagicMock()
+        gh.list_open_issues.side_effect = AssertionError(
+            "must not scan all open issues when --agent is given without --issue"
+        )
+        monkeypatch.setattr(orch, "GitHubClient", lambda **k: gh)
+
+        args = _make_wake_args(issue=None, interactive_result=False)
+        with pytest.raises(SystemExit) as excinfo:
+            orch._wake(args)
+        assert excinfo.value.code == 1
+
+    def test_present_issue_and_agent_narrows_to_one_step_for_a_real_run(self, monkeypatch):
+        monkeypatch.setattr(orch, "_ensure_gh_cli", lambda: None)
+        monkeypatch.setattr(orch, "_discover_github_token", lambda: "t")
+        monkeypatch.setattr(orch, "is_pipeline_paused", lambda: (False, None, None))
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, None))
+        gh = MagicMock()
+        gh.get_issue_labels.return_value = set()
+        monkeypatch.setattr(orch, "GitHubClient", lambda **k: gh)
+
+        args = _make_wake_args(
+            issue=9, kind="issue", agent="03_execute/coder", interactive_result=False,
+        )
+        ctx = orch._wake(args)
+        assert ctx is not None
+        assert ctx.interactive_result is False
+        assert [a.agent for a in ctx.agents] == ["03_execute/coder"]
+
+    def test_unknown_agent_name_exits_rather_than_running_nothing_silently(self, monkeypatch):
+        monkeypatch.setattr(orch, "_ensure_gh_cli", lambda: None)
+        monkeypatch.setattr(orch, "_discover_github_token", lambda: "t")
+        monkeypatch.setattr(orch, "is_pipeline_paused", lambda: (False, None, None))
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, None))
+        gh = MagicMock()
+        gh.get_issue_labels.return_value = set()
+        monkeypatch.setattr(orch, "GitHubClient", lambda **k: gh)
+
+        args = _make_wake_args(
+            issue=9, kind="issue", agent="nonexistent/agent", interactive_result=False,
+        )
+        with pytest.raises(SystemExit) as excinfo:
+            orch._wake(args)
+        assert excinfo.value.code == 1
+
+
+# ---------------------------------------------------------------------------
 # _run_agent(interactive_result=True): reads the file, never spawns
 # ---------------------------------------------------------------------------
 
