@@ -40,6 +40,7 @@ from metrics_aggregator import (
     already_aggregated,
     compute_blended_record,
     compute_classification_mix,
+    compute_coder_reinvocation_ratio,
     compute_per_agent_records,
     compute_period_aggregates,
     compute_value_add_ratio,
@@ -375,6 +376,86 @@ class TestClassificationMix:
         # 0 feature_research, 1 corrective -> 0.0
         assert ratio is not None
         assert ratio == 0.0
+
+
+class TestCoderReinvocationRatio:
+    """ratio_coder_invocations-issue: how many times coder runs per issue it
+    touches -- reconstructs pr-reviewer's/epic-pr-reviewer's review_loop
+    re-invocation count from raw invocation records, since review-cycle:N
+    lives only as a GitHub label, never in a metrics record."""
+
+    def test_single_pass_acceptance_gives_ratio_one(self):
+        records = [
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=2),
+        ]
+        ratio = compute_coder_reinvocation_ratio(records)
+        assert ratio == 1.0
+
+    def test_one_issue_needed_three_coder_passes(self):
+        records = [
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=2),
+        ]
+        # issue 1: 3 invocations, issue 2: 1 invocation -> 4 invocations / 2 issues = 2.0
+        ratio = compute_coder_reinvocation_ratio(records)
+        assert ratio == 2.0
+
+    def test_epic_completion_coder_counts_too(self):
+        """04_evaluate/coder (epic-completion's own review_loop target) must
+        count alongside 03_execute/coder -- both are re-invoked by their
+        respective reviewer's REQUEST_CHANGES outcome."""
+        records = [
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("04_evaluate/coder", _IN_BUCKET_TS, github_issue_number=2),
+            _raw_record("04_evaluate/coder", _IN_BUCKET_TS, github_issue_number=2),
+        ]
+        ratio = compute_coder_reinvocation_ratio(records)
+        assert ratio == 1.5
+
+    def test_non_coder_agents_are_ignored(self):
+        records = [
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/pr-reviewer", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("01_product_docs/prd-writer", _IN_BUCKET_TS, github_issue_number=1),
+        ]
+        ratio = compute_coder_reinvocation_ratio(records)
+        assert ratio == 1.0
+
+    def test_records_without_an_issue_number_are_excluded(self):
+        records = [
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=None),
+        ]
+        ratio = compute_coder_reinvocation_ratio(records)
+        assert ratio == 1.0
+
+    def test_returns_none_when_no_coder_invocations(self):
+        records = [
+            _raw_record("03_execute/pr-reviewer", _IN_BUCKET_TS, github_issue_number=1),
+        ]
+        assert compute_coder_reinvocation_ratio(records) is None
+
+    def test_blended_record_carries_the_ratio_field(self):
+        records = [
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+            _raw_record("03_execute/coder", _IN_BUCKET_TS, github_issue_number=1),
+        ]
+        rec = compute_blended_record(
+            records, _utc(_BUCKET_START), _utc(_BUCKET_END), "week",
+        )
+        assert rec["ratio_coder_invocations-issue"] == 2.0
+
+    def test_blended_record_omits_the_field_when_not_computable(self):
+        records = [
+            _raw_record("03_execute/pr-reviewer", _IN_BUCKET_TS, github_issue_number=1),
+        ]
+        rec = compute_blended_record(
+            records, _utc(_BUCKET_START), _utc(_BUCKET_END), "week",
+        )
+        assert "ratio_coder_invocations-issue" not in rec
 
 
 class TestPerAgentBreakdown:

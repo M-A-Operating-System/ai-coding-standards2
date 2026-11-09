@@ -35,7 +35,16 @@ METRIC PRIORITY ORDER (v1)
    are not recomputed.
 8. Cache efficiency (ratio_cache_efficiency).
 9. Blocked/failed rate per invocation (ratio_error_rate).
-10. Any additional scalar aggregate fields discovered dynamically from the
+10. Coder runs per issue (ratio_coder_invocations-issue) -- reconstructed
+    from invocation counts; review-cycle:N is a GitHub label only, never a
+    metrics-record field.
+11. Total agent invocations, invocations ending in error, retries, agent
+    turns, cache tokens written, cache tokens read -- field definitions
+    mirror pipeline_orchestrator.py's METRICS_SCHEMA (the authoritative
+    field reference published to ai-agile/metrics as schema.json), itself
+    sourced from the Anthropic API usage object and the Claude Code CLI's
+    own init/result events where applicable.
+12. Any additional scalar aggregate fields discovered dynamically from the
     records are appended after the above, in discovery order.
 
 UNIT DISCIPLINE
@@ -154,6 +163,52 @@ _KNOWN_METRICS = [
         "ratio (0-1)", _LINE,
         "The proportion of agent invocations in the period that ended in a "
         "blocked or failed outcome, a reliability signal for the pipeline.",
+    ),
+    (
+        "ratio_coder_invocations-issue", "Coder runs per issue",
+        "invocations per issue", _LINE,
+        "Average number of times coder ran per issue it touched in the "
+        "period, reconstructed from invocation counts since the "
+        "review-cycle:N label pr-reviewer's review_loop writes on each "
+        "re-invocation is never itself stored in a metrics record. A value "
+        "of 1.0 means coder's first pass was accepted every time; "
+        "consistently above 1 means coder is not fixing pr-reviewer's "
+        "findings on the first attempt.",
+    ),
+    # Remaining raw aggregate fields, given a real description instead of
+    # falling through to the generic dynamically-discovered placeholder.
+    # Definitions mirror pipeline_orchestrator.py's METRICS_SCHEMA, which is
+    # the authoritative field reference published to ai-agile/metrics as
+    # schema.json.
+    (
+        "count_invocations", "Total agent invocations", "count", _LINE,
+        "The total number of agent invocations (one per pipeline step run) "
+        "recorded in the period, across every agent.",
+    ),
+    (
+        "count_is_error", "Invocations ending in error", "count", _LINE,
+        "The number of agent invocations in the period the Claude Code CLI "
+        "itself flagged as an error.",
+    ),
+    (
+        "sum_retry_count", "Retries", "count", _LINE,
+        "The total number of automatic retries the orchestrator performed "
+        "across invocations in the period (e.g. after a transient API error).",
+    ),
+    (
+        "sum_num_turns", "Agent turns", "turns", _LINE,
+        "The total number of agentic turns -- one model response plus any "
+        "tool calls it made -- across invocations in the period.",
+    ),
+    (
+        "sum_cache_creation_input_tokens", "Cache tokens written", "tokens", _LINE,
+        "Total tokens written to Anthropic's prompt cache when creating a "
+        "new cache entry, summed across invocations in the period.",
+    ),
+    (
+        "sum_cache_read_input_tokens", "Cache tokens read", "tokens", _LINE,
+        "Total tokens retrieved from Anthropic's prompt cache rather than "
+        "reprocessed, summed across invocations in the period.",
     ),
 ]
 

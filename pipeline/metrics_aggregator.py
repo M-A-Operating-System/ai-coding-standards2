@@ -395,6 +395,43 @@ def compute_classification_mix(bucket_records: list) -> Optional[float]:
     return feature_research / total
 
 
+# Any agent_id ending in "/coder" is a coder invocation -- 03_execute/coder
+# (standard-delivery's pr-reviewer review_loop) and 04_evaluate/coder
+# (epic-completion's epic-pr-reviewer review_loop) are both re-invoked by
+# their respective reviewer's REQUEST_CHANGES outcome, so both count toward
+# this ratio rather than just the standard-delivery one.
+def compute_coder_reinvocation_ratio(bucket_records: list) -> Optional[float]:
+    """ratio_coder_invocations-issue: coder invocations per issue coder touched.
+
+    pr-reviewer's (and epic-pr-reviewer's) review_loop re-invokes coder on a
+    REQUEST CHANGES outcome, up to max_cycles, without any extra bookkeeping
+    field recording how many times -- review-cycle:N lives only as a GitHub
+    label, never in a metrics record. This ratio reconstructs the same signal
+    from invocation counts: coder invocations in the bucket divided by the
+    number of distinct issues that had at least one. A value of 1.0 means
+    coder's first pass was accepted every time; consistently above 1 means
+    coder is not fixing pr-reviewer's findings on the first attempt.
+
+    Computed over invocations with a real github_issue_number only (an issue
+    number of None, as a scheduled/maintenance step would carry, cannot be
+    attributed to any issue and is excluded from both the count and the
+    distinct-issue denominator).
+    """
+    by_issue: dict = {}
+    for rec in bucket_records:
+        agent_id = rec.get("agent_id", "")
+        if not agent_id.endswith("/coder"):
+            continue
+        num = rec.get("github_issue_number")
+        if not isinstance(num, int):
+            continue
+        by_issue[num] = by_issue.get(num, 0) + 1
+
+    if not by_issue:
+        return None
+    return sum(by_issue.values()) / len(by_issue)
+
+
 # ---------------------------------------------------------------------------
 # Blended weekly total row
 # ---------------------------------------------------------------------------
@@ -463,6 +500,10 @@ def compute_blended_record(
     classification_mix = compute_classification_mix(bucket_records)
     if classification_mix is not None:
         base["ratio_classification_mix"] = round(classification_mix, 6)
+
+    coder_reinvocation_ratio = compute_coder_reinvocation_ratio(bucket_records)
+    if coder_reinvocation_ratio is not None:
+        base["ratio_coder_invocations-issue"] = round(coder_reinvocation_ratio, 6)
 
     if count_issues > 0:
         base["ave_cost_usd-issue"] = round(total_cost / count_issues, 6)

@@ -524,6 +524,17 @@ class TestSpikeCarveOut:
         assert "compute_value_add_ratio" not in source
         assert "compute_classification_mix" not in source
 
+    def test_coder_reinvocation_ratio_uses_aggregated_value_without_recomputation(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [
+            _blended(_week_ts(now, 1), **{"ratio_coder_invocations-issue": 2.0}),
+        ]
+        descs = prepare_report_data(records, now)
+        cr = next((d for d in descs if d["field"] == "ratio_coder_invocations-issue"), None)
+        assert cr is not None
+        assert cr["title"] == "Coder runs per issue"
+        assert cr["data_12mo"][0][1] == pytest.approx(2.0)
+
 
 # ---------------------------------------------------------------------------
 # R6: At least one chart shows a breakdown by agent_id

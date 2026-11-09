@@ -962,6 +962,29 @@ class TestMetricsSchema:
         assert METRICS_RECORDS_FILE == "records.jsonl"
         assert METRICS_SCHEMA_FILE == "schema.json"
 
+    def test_every_property_carries_a_nonempty_description(self):
+        """schema.json is published to ai-agile/metrics as the field
+        reference for records.jsonl -- a property with no description isn't
+        documented anywhere else, so every property must carry one."""
+        props = METRICS_SCHEMA.get("properties", {})
+        for name, spec in props.items():
+            desc = spec.get("description")
+            assert desc and desc.strip(), f"property {name!r} has no description"
+
+    def test_cli_sourced_token_fields_cite_the_anthropic_usage_object(self):
+        """input_tokens/output_tokens/cache_creation_input_tokens/
+        cache_read_input_tokens come straight from the Anthropic API's own
+        usage object (passed through by the Claude Code CLI); their
+        descriptions must say so rather than being generic placeholders."""
+        props = METRICS_SCHEMA.get("properties", {})
+        for f in (
+            "input_tokens", "output_tokens",
+            "cache_creation_input_tokens", "cache_read_input_tokens",
+        ):
+            assert "Anthropic API" in props[f]["description"], (
+                f"{f}: description must cite the Anthropic API usage object"
+            )
+
 
 # ---------------------------------------------------------------------------
 # TestDurationMsComputation
