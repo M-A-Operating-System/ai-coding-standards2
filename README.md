@@ -54,7 +54,7 @@ Standards are defined centrally in machine-readable JSON and referenced by
 stable IDs. Authors and reviewers can cite those IDs in design decisions and
 pull request findings. Each project records its architectural decisions and
 permitted exceptions in its own `adrs/adrs.json`. See the
-[standards and ADR guide](docs/product/standards/14-standards.md).
+[standards and ADR guide](docs/product/standards_taxonomy/14-standards.md).
 
 This repository is the source for the orchestrator, flow definitions, agents,
 and standards. See [onboarding](docs/product/orchestrator/16-onboarding.md)
@@ -332,8 +332,14 @@ repos.
 
 ## Documentation
 
-- [`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md) — the full design index and reading order
-- [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo, platform behaviour, path resolution
+The [product documentation](docs/product/README.md) is organized into three areas.
+
+- [Orchestrator](docs/product/orchestrator/README.md) explains how the framework
+  runs and controls workflows, including setup and configuration.
+- [Process](docs/product/_process/00_README.md) follows product work from intent
+  and design through implementation, verification, and release.
+- [Standards and Taxonomy](docs/product/standards_taxonomy/README.md) covers the rules
+  and shared vocabulary that people and agents use to govern design and code.
 
 ## Contributing
 

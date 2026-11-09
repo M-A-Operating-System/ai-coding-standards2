@@ -34,7 +34,7 @@ def adr_exception_index(adr_records: list[dict], standards_by_id: dict[str, dict
     A standard is only included if standards_by_id (standards/*.json's own
     records, keyed by id) says its own adr_overridable is True -- verified
     the same way the ADR citation itself is, never trusted from the ADR's
-    own listing alone (docs/product/standards/14-standards.md: "adr_overridable:
+    own listing alone (docs/product/standards_taxonomy/14-standards.md: "adr_overridable:
     false -- always blocks; no exception is possible"). A standard missing
     from standards_by_id is treated as non-overridable.
     """

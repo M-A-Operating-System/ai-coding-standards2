@@ -1,425 +1,83 @@
-# Product-Led Design Standard
+# Product Design and Roadmap
 
-**Version:** 1.0  
-**Status:** Draft Process Standard  
-**Folder:** `docs/_process`
+Product design describes the desired state. The roadmap identifies the
+business outcomes we intend to achieve and the order in which we intend to
+deliver the capabilities that support them. The same capability identifiers
+connect both views.
 
----
+## Define the desired product
 
-## Purpose
+| Level | What to document |
+| --- | --- |
+| Product | Purpose, users, business context, outcomes, main journeys, and modules. |
+| Module | A major area of business functionality, with its users, responsibilities, workflows, and components. |
+| Component | A group of related capabilities, with its business rules, interactions, and dependencies. |
+| Capability | A discrete behavior the product enables, with a stable ID, owning component, source product document, linked outcomes, and acceptance expectations. |
 
-This document defines how products are designed and documented in an AI-first product engineering repository.
+Write capabilities in terms of observable behavior. For example, **Search
+Public Trees** means users can search published decision trees by keyword
+and see matching results. Its capability record can point to dependencies,
+approved scenarios, tests, and verification evidence as they become available.
 
-Product-led design means that product documentation defines the desired future state of the product before implementation work is planned or executed.
+Keep product intent in versioned documents under `docs/product/`. Use stable
+headings, consistent terminology, and explicit links so people and agents
+can find the same source. Agents can propose modules, components, and
+capabilities from the design. People review the proposed structure and
+confirm that it reflects the intended product.
 
-The product definition is the source of truth for what should exist.
+## Product architecture and technical architecture
 
-Implementation is evidence of how much of that desired state has been realized.
+Product architecture defines the desired business behavior. Technical
+architecture defines the engineering patterns and constraints for
+implementing it. For **Search Public Trees**, the product design describes
+what a search returns. The technical guidance can reference approved API,
+security, observability, or performance requirements.
 
----
+Keep the detailed rules in the architecture guidance and [standards
+catalogue](../standards_taxonomy/README.md). Link the applicable guidance
+from the capability so the implementation can be reviewed against both the
+expected behavior and the relevant engineering rules.
 
-## Relationship to AI-First Product Engineering
+## Plan delivery through the roadmap
 
-This standard supports the AI-first engineering model by making product intent explicit, structured, and traceable.
+A **phase** groups outcomes into a delivery horizon. An **outcome** describes
+a measurable business result. Each outcome references the **capabilities**
+required to achieve it, including capabilities from different components or
+modules. Store the plan in a structured file such as `roadmap.yaml` and
+reference capability IDs from the product design.
 
-AI systems can only implement effectively when they understand what product outcome they are trying to create.
-
-Product-led design provides that intent.
-
-```text
-Product Documentation
-    ↓
-Modules
-    ↓
-Components
-    ↓
-Capabilities
-    ↓
-BDD Specifications
+```yaml
+version: 1
+phases:
+  foundation:
+    name: Foundation
+    outcomes:
+      - increase-public-tree-usage
+outcomes:
+  increase-public-tree-usage:
+    name: Increase Public Tree Usage
+    description: Increase engagement with published decision trees.
+    capabilities:
+      - search-public-trees
+      - view-public-tree
 ```
 
-Each layer should be understandable to humans and usable by AI systems.
-
----
-
-## Product Documentation Defines Desired State
-
-Product documentation describes the final desired state of a product.
-
-It should answer:
-
-```text
-What should the product become?
-```
-
-It should not primarily answer:
-
-```text
-How has the product currently been implemented?
-```
-
-The current implementation may be incomplete, transitional, or technically constrained. Product documentation should define the intended end state clearly enough that AI systems and human teams can work toward it.
-
----
-
-## Desired State and Current State
-
-The distinction between desired state and current state is central.
-
-Desired state is defined by:
-
-```text
-Product Documentation
-    ↓
-Module
-    ↓
-Component
-    ↓
-Capability
-```
-
-Current state is evidenced by:
-
-```text
-Code
-    ↓
-Tests
-    ↓
-Verification Evidence
-```
-
-The roadmap is the measured gap between desired state and current verified state.
-
----
-
-## Product Design Hierarchy
-
-The v1 product design model uses three product architecture layers below the product itself.
-
-```text
-Product
-    ↓
-Module
-    ↓
-Component
-    ↓
-Capability
-```
-
-This hierarchy defines what the product should contain.
-
----
-
-## Product
-
-A Product is a complete business solution or product experience.
-
-A repository may contain documentation for one product or multiple products.
-
-Each product should have a clear product overview that describes:
-
-- Product purpose
-- Target users
-- Business context
-- Core outcomes
-- Primary modules
-- Major user journeys
-- Design principles
-
-The product overview should be written for both humans and AI systems.
-
----
-
-## Module
-
-A Module is a major product area.
-
-Modules organize the product into stable business areas.
-
-Examples:
-
-- Public Repository
-- Authoring
-- Administration
-- Analytics
-- Identity Management
-
-A module should describe a meaningful area of product functionality, not a technical subsystem.
-
-A module document should include:
-
-- Module purpose
-- Business responsibilities
-- Primary users
-- Components
-- Key workflows
-- Related outcomes
-- Ownership where applicable
-
----
-
-## Component
-
-A Component is a logical subsystem within a module.
-
-Components group related capabilities.
-
-Examples:
-
-- Tree Viewer
-- Search
-- Download Services
-- User Management
-- Security Configuration
-
-A component document should include:
-
-- Component purpose
-- Responsibilities
-- Supported capabilities
-- User interactions
-- Business rules
-- Dependencies on other components
-- Relevant design notes
-
-Components should describe product behavior and business responsibility rather than technical implementation.
-
----
-
-## Capability
-
-A Capability is a discrete business function delivered by the product.
-
-Capabilities are the primary unit of AI-first implementation.
-
-Examples:
-
-- Search Public Trees
-- View Public Tree
-- Download Tree DSL
-- Publish Decision Tree
-- Configure SSO Provider
-
-Capabilities should be named in business language.
-
-Good capability names:
-
-```text
-Search Public Trees
-Download Tree DSL
-Publish Decision Tree
-Approve User Registration
-```
-
-Poor capability names:
-
-```text
-Build Search API
-Create React Component
-Add Database Table
-Implement Lambda Function
-```
-
-Capabilities should describe what the product enables, not how the implementation works.
-
----
-
-## Capabilities as the Bridge to Implementation
-
-Capabilities are where product design becomes executable.
-
-Each capability should be traceable to:
-
-- Product document
-- Module
-- Component
-- Business outcome
-- Approved issue (Gherkin scenarios)
-- Feature file
-- Tests
-- Evidence
-
-The capability is the central link between product intent and implementation work.
-
-```text
-Product Design
-    ↓
-Capability
-    ↓
-Approved Issue (Gherkin scenarios) -- single approval gate
-    ↓
-Feature File (docs/features/{feature}.md)
-    ↓
-Test
-    ↓
-Implementation
-    ↓
-Evidence
-```
-
----
-
-## Product Documentation for Humans and AI
-
-Product documentation should be written in a style that supports both human review and AI consumption.
-
-Recommended practices:
-
-- Use stable headings.
-- Use consistent terminology.
-- Use explicit identifiers where practical.
-- Avoid vague language.
-- Avoid unexplained assumptions.
-- Separate business behavior from implementation details.
-- Link to related modules, components, capabilities, and outcomes.
-- Use tables for structured lists.
-- Use examples to clarify behavior.
-
-AI systems should be able to read the product documentation and propose a capability model without needing hidden context.
-
----
-
-## Product Documentation Should Avoid Implementation Detail
-
-Product documentation should avoid over-specifying technology unless technology is itself part of the product behavior.
-
-Avoid including:
-
-- Framework choices
-- Database table designs
-- Internal service names
-- Deployment topology
-- Low-level code structure
-
-Those belong in technical architecture or implementation documentation.
-
-Product documentation defines the destination.
-
-Technical architecture defines the preferred route.
-
-Implementation defines the current location.
-
----
-
-## Capability Derivation
-
-Capabilities should be derived from product documentation.
-
-A capability should exist because a product document describes a business behavior, user outcome, or product function that requires it.
-
-The derivation should be traceable.
-
-Example:
-
-```text
-Product Document (docs/product/{capability}.md):
-Users can search public decision trees by keyword.
-
-Derived Capability:
-Search Public Trees
-
-Approved Issue (Gherkin scenario, authored for human review):
-Scenario: Search returns matching public trees by keyword
-
-Copied on approval to Feature File (docs/features/search-public-trees.md):
-Feature: Search Public Trees
-  Scenario: Search returns matching public trees by keyword
-```
-
-This makes the capability catalog an explicit representation of the product design.
-
----
-
-## Recommended Repository Pattern
-
-For a repository containing multiple product definitions, product documentation may be organized as:
-
-```text
-docs/
-    product/
-        product-a/
-            overview.md
-            modules/
-            components/
-            capabilities/
-        product-b/
-            overview.md
-            modules/
-            components/
-            capabilities/
-    features/
-        {feature}.md
-```
-
-The process standards remain shared under:
-
-```text
-docs/_process/
-```
-
-The process folder defines how product documentation should work.
-
-The product folder contains the actual product definitions.
-
-The features folder holds the durable, versioned Gherkin scenarios copied from approved issues --
-one file per feature, shared across all products in the repository.
-
----
-
-## Product-Led Design Workflow
-
-Recommended workflow:
-
-```text
-1. Human defines or updates product intent.
-2. AI analyzes the product document.
-3. AI proposes modules, components, and capabilities.
-4. Human reviews and approves the structure.
-5. AI drafts an issue with capability-derived Gherkin scenarios.
-6. Human reviews and approves the issue -- capability scope and scenarios approved together.
-7. AI copies the approved scenarios into docs/features/{feature}.md.
-8. The feature file becomes the basis for test and implementation work.
-```
-
-This workflow keeps humans in control of intent and approval while using AI to perform analysis and generation.
-
----
-
-## Product Design Completion
-
-Product design completion is not the same as implementation completion.
-
-Product design completion means:
-
-- Product documentation exists.
-- Modules are defined.
-- Components are defined.
-- Capabilities are identified.
-- Capabilities are linked to product intent.
-- Capabilities are ready for specification.
-
-Implementation completion is measured separately through evidence.
-
----
-
-## Summary
-
-Product-led design defines the desired future state of the product.
-
-The design hierarchy is:
-
-```text
-Product
-    ↓
-Module
-    ↓
-Component
-    ↓
-Capability
-```
-
-Capabilities are the bridge between product intent and AI-first implementation.
-
-Product documentation should be written for both humans and AI systems. It should be structured, explicit, traceable, and focused on desired product behavior rather than current implementation details.
-
-The output of product-led design is a codified product model that AI systems can use to generate specifications, tests, implementation plans, and code under human oversight.
+## Measure progress from evidence
+
+A capability is verified when all required evidence passes. It may be
+undefined, defined, specified, in progress, failed, or blocked before that
+point. Generate status from the linked specifications, tests, and evidence.
+
+- **Outcome progress** is verified required capabilities divided by total
+  required capabilities.
+- **Phase progress** rolls up outcome progress. Record any weighting used.
+- **Roadmap gap** is the set of required capabilities that are still unverified.
+- **Technical debt** is tracked separately against the delivered capability,
+  applicable standard, supporting evidence, and proposed remediation.
+
+Capability verification measures delivery progress. Measure achievement of
+the business outcome separately using its defined measure.
+
+When a capability is ready to enter delivery, use the [implementation and
+verification guide](04_ai-agile-implementation.md) to turn it into approved,
+testable work.

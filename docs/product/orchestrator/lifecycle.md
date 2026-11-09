@@ -262,18 +262,7 @@ gates above are the only queue throttle.
 
 ### Release flow
 
-A scheduled flow with no work item behind it (see
-[PRODUCT.md](PRODUCT.md#a-scheduled-flow-derives-its-own-dueness-from-the-record)).
-It fires on a weekly cron and supports manual dispatch.
-
-| Behaviour | Detail |
-|---|---|
-| Trigger | Weekly cron; manual dispatch |
-| No-change run | No merged PRs or closed issues since the last release: exits without publishing and records a structured no-change outcome |
-| Retry | Re-triggers with no residual state from a prior failed run |
-| Discovery | The most recently published release tag is used as the start boundary; all merged PRs and their associated closed issues since that boundary are collected |
-| Markdown generation | Release-notes Markdown is generated deterministically from the collected set |
-| Publication gates | A coverage threshold and configured exclusion rules filter the set; a duplicate-release check prevents creating a tag or release that already exists |
-| Publication | A GitHub Release is created with the generated notes as its body |
-| Logging | Release metadata, final status, and any errors are recorded in orchestrator logs after every run |
-| Parallel operation | The existing Wednesday GitHub Actions workflow continues to run alongside the orchestrator release flow until shadow-run parity is confirmed (sub-issue 3/3) |
+Release management follows review and merge. The scheduled `weekly-release`
+flow gathers eligible merged changes and publishes a versioned GitHub Release.
+See [Release Management](../_process/06_release-management.md) for the release
+inputs, publication gates, manual paths, and rollback.
