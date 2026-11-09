@@ -24,9 +24,12 @@ neither clobber the consuming repo nor silently do the wrong amount of work).
   --full             -> run_full()  -> installs the COMPLETE managed set:
                                         the whole-.claude symlink, the standards
                                         symlink, the local adrs/ folder,
-                                        requirements, .gitignore. (The two
-                                        pipeline workflows are committed during
-                                        seed, not here.)
+                                        requirements, .gitignore, AND the two
+                                        pipeline workflows (re-copied from the
+                                        submodule's current version, so a
+                                        re-run after a submodule update
+                                        actually refreshes a consuming repo's
+                                        copy of them too).
 
   --force is an overwrite modifier (not a mode): add it to --seed or --full to
   overwrite existing files. The Onboard job runs --full --force.
@@ -51,8 +54,10 @@ the full install locally passes --full (adding --force to overwrite). See
 docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
-    ai_orchestrator.yml, ai_emergency_stop.yml (already committed during seed;
-    re-written locally but never pushed by the Onboard job),
+    ai_orchestrator.yml, ai_emergency_stop.yml (first written and committed
+    during seed; re-written here on every --full run and, when run by the
+    Onboard/Bump job, committed and pushed again -- so a submodule update to
+    either workflow reaches the consuming repo without a second manual seed),
     the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
     requirements.txt, .gitignore entries, and untracking of any
     previously-committed managed paths.
