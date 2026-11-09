@@ -76,7 +76,10 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
+
+METRICS_SCHEMA_PATH = Path(__file__).parent / "schemas" / "metrics.schema.json"
 
 METRICS_BRANCH = "ai-agile/metrics"
 METRICS_RECORDS_FILE = "records.jsonl"
@@ -106,111 +109,40 @@ _BAR_AGENT_STACKED = "bar_agent_stacked"
 # listed here are appended after in discovery order (with a generic
 # description), so a new field added by a future metrics-aggregator update
 # is rendered automatically.
-_KNOWN_METRICS = [
-    # By-agent bar charts (sourced from per-agent breakdown rows).
-    (
-        "sum_cost_usd", "Cost by agent", "cost (USD)", _BAR_AGENT,
-        "Total Anthropic API spend (USD) attributed to each pipeline agent "
-        "in the window, showing where spending concentrates across the pipeline.",
-    ),
-    (
-        ("sum_input_tokens", "sum_output_tokens"), "Tokens by agent", "tokens",
-        _BAR_AGENT_STACKED,
-        "Total input and output tokens consumed by each pipeline agent in "
-        "the window, stacked by direction (input vs output), showing where "
-        "token spend concentrates across the pipeline.",
-    ),
-    (
-        "sum_duration_ms", "Duration by agent", "duration (ms)", _BAR_AGENT,
-        "Total wall-clock duration each pipeline agent spent running in the "
-        "window, showing where time is spent across the pipeline.",
-    ),
-    # Blended time-series line charts (sourced from blended weekly-aggregate rows).
-    (
-        "count_issues", "Throughput (issues per week)", "issues", _LINE,
-        "The number of distinct issues the pipeline processed in each "
-        "period, a measure of overall delivery throughput.",
-    ),
-    (
-        "ave_cost_usd-issue", "Cost per completed issue", "cost (USD)", _LINE,
-        "Average Anthropic API spend (USD) per completed issue in the "
-        "period, a unit-economics view of pipeline cost.",
-    ),
-    (
-        "ratio_value_add-issue", "Value-add ratio", "ratio (0-1)", _LINE,
-        "The share of agent invocations in the period classified as "
-        "value-add work (feature or research) rather than overhead, with "
-        "a spike carve-out applied by the metrics aggregator.",
-    ),
-    (
-        "ratio_classification_mix",
-        "Classification mix (feature and research / total)",
-        "ratio (0-1)", _LINE,
-        "The proportion of invocations classified as feature or research "
-        "work versus the total, reflecting the balance between "
-        "forward-looking work and maintenance/overhead.",
-    ),
-    (
-        "ratio_cache_efficiency",
-        "Cache efficiency (cache reads / total cache tokens)",
-        "ratio (0-1)", _LINE,
-        "The share of total cache tokens that were cache reads rather than "
-        "cache writes, measuring how effectively the pipeline reuses "
-        "prompt caching across invocations.",
-    ),
-    (
-        "ratio_error_rate", "Blocked/failed rate per invocation",
-        "ratio (0-1)", _LINE,
-        "The proportion of agent invocations in the period that ended in a "
-        "blocked or failed outcome, a reliability signal for the pipeline.",
-    ),
-    (
-        "ratio_coder_invocations-issue", "Coder runs per issue",
-        "invocations per issue", _LINE,
-        "Average number of times coder ran per issue it touched in the "
-        "period, reconstructed from invocation counts since the "
-        "review-cycle:N label pr-reviewer's review_loop writes on each "
-        "re-invocation is never itself stored in a metrics record. A value "
-        "of 1.0 means coder's first pass was accepted every time; "
-        "consistently above 1 means coder is not fixing pr-reviewer's "
-        "findings on the first attempt.",
-    ),
-    # Remaining raw aggregate fields, given a real description instead of
-    # falling through to the generic dynamically-discovered placeholder.
-    # Definitions mirror pipeline_orchestrator.py's METRICS_SCHEMA, which is
-    # the authoritative field reference published to ai-agile/metrics as
-    # schema.json.
-    (
-        "count_invocations", "Total agent invocations", "count", _LINE,
-        "The total number of agent invocations (one per pipeline step run) "
-        "recorded in the period, across every agent.",
-    ),
-    (
-        "count_is_error", "Invocations ending in error", "count", _LINE,
-        "The number of agent invocations in the period the Claude Code CLI "
-        "itself flagged as an error.",
-    ),
-    (
-        "sum_retry_count", "Retries", "count", _LINE,
-        "The total number of automatic retries the orchestrator performed "
-        "across invocations in the period (e.g. after a transient API error).",
-    ),
-    (
-        "sum_num_turns", "Agent turns", "turns", _LINE,
-        "The total number of agentic turns -- one model response plus any "
-        "tool calls it made -- across invocations in the period.",
-    ),
-    (
-        "sum_cache_creation_input_tokens", "Cache tokens written", "tokens", _LINE,
-        "Total tokens written to Anthropic's prompt cache when creating a "
-        "new cache entry, summed across invocations in the period.",
-    ),
-    (
-        "sum_cache_read_input_tokens", "Cache tokens read", "tokens", _LINE,
-        "Total tokens retrieved from Anthropic's prompt cache rather than "
-        "reprocessed, summed across invocations in the period.",
-    ),
-]
+#
+# Loaded from pipeline/schemas/metrics.schema.json's `derived_metrics`
+# section rather than hardcoded here, so the schema file is the single
+# source of truth for both this report's chart catalogue and the
+# orchestrator's published schema.json -- see that section's own $comment.
+def _load_known_metrics() -> tuple:
+    """Build (_KNOWN_METRICS, stacked_labels) from metrics.schema.json's
+    `derived_metrics` section, preserving that section's key order as the
+    report's priority order. stacked_labels maps a (field_in, field_out)
+    tuple to the (label_in, label_out) strings a _BAR_AGENT_STACKED entry's
+    components declare, for use by prepare_report_data()."""
+    schema = json.loads(METRICS_SCHEMA_PATH.read_text())
+    derived = schema["derived_metrics"]
+    known_metrics = []
+    stacked_labels = {}
+    for key, entry in derived.items():
+        if key == "$comment":
+            continue
+        chart_type = entry["chart_type"]
+        if chart_type == _BAR_AGENT_STACKED:
+            components = entry["components"]
+            field = (components["in"], components["out"])
+            stacked_labels[field] = (components["label_in"], components["label_out"])
+        else:
+            field = key
+        known_metrics.append((
+            field, entry["title"], entry["ylabel"], chart_type,
+            entry["business_description"],
+        ))
+    return known_metrics, stacked_labels
+
+
+_KNOWN_METRICS, _STACKED_LABELS = _load_known_metrics()
+
 
 def _flatten_field(field) -> set:
     """A _BAR_AGENT_STACKED entry's field is a (field_in, field_out) tuple;
@@ -420,11 +352,14 @@ def prepare_report_data(records: list, now: datetime) -> list:
     for field, title, ylabel, chart_type, description in list(_KNOWN_METRICS) + extra_fields:
         if chart_type == _BAR_AGENT_STACKED:
             field_in, field_out = field
+            label_in, label_out = _STACKED_LABELS.get(
+                (field_in, field_out), ("input", "output")
+            )
             desc = _build_bar_agent_stacked(
                 title, ylabel,
                 per_agent_week_sorted, per_agent_day_sorted,
                 cutoff_12mo, cutoff_2mo,
-                field_in, field_out, label_in="input", label_out="output",
+                field_in, field_out, label_in=label_in, label_out=label_out,
                 description=description,
             )
         elif chart_type == _BAR_AGENT:

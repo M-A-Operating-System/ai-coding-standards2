@@ -152,5 +152,140 @@
       "description": "The issue's classification label (e.g. 'enhancement', 'bug', 'spike') as set by 01_product_docs/issue-classifier, or null before classification runs (orchestrator-defined).",
       "business_description": "What kind of work this issue is -- the dimension the report's value-add and classification-mix ratios use to separate forward-looking work from maintenance and overhead."
     }
+  },
+  "derived_metrics": {
+    "$comment": "Aggregate/derived fields computed by metrics_aggregator.py onto a blended (agent_id=metrics-aggregator) or per-agent aggregate row -- not present on a raw per-invocation record (see `properties` above for those). field-naming convention: {aggregation_fn}_{base_metric}[-{dimension}] (see metrics_aggregator.py module docstring). metrics_report.py loads this object directly to build its chart list: `title`/`ylabel`/`chart_type` drive rendering, `description` is the technical provenance, `business_description` is the paragraph rendered between each metric's H2 heading and its charts in the PDF -- this file is the single source of truth for both the orchestrator's schema.json publish and the report's own metric catalogue. Order here is the report's priority order. A `chart_type` of 'bar_agent_stacked' entry has no single `field_source`; its `components.in`/`components.out` name the two per-agent fields stacked in one bar instead.",
+    "sum_cost_usd": {
+      "type": "number",
+      "chart_type": "bar_agent",
+      "title": "Cost by agent",
+      "ylabel": "cost (USD)",
+      "description": "sum_cost_usd: total_cost_usd summed across raw per-invocation records in the bucket, computed per agent_id (compute_per_agent_records) and blended (compute_blended_record).",
+      "business_description": "Total Anthropic API spend (USD) attributed to each pipeline agent in the window, showing where spending concentrates across the pipeline."
+    },
+    "tokens_by_agent": {
+      "type": "object",
+      "chart_type": "bar_agent_stacked",
+      "title": "Tokens by agent",
+      "ylabel": "tokens",
+      "components": {
+        "in": "sum_input_tokens", "out": "sum_output_tokens",
+        "label_in": "input", "label_out": "output"
+      },
+      "description": "Stacked pairing of sum_input_tokens and sum_output_tokens, each summed per agent_id the same way as any other sum_* field.",
+      "business_description": "Total input and output tokens consumed by each pipeline agent in the window, stacked by direction (input vs output), showing where token spend concentrates across the pipeline."
+    },
+    "sum_duration_ms": {
+      "type": "integer",
+      "chart_type": "bar_agent",
+      "title": "Duration by agent",
+      "ylabel": "duration (ms)",
+      "description": "sum_duration_ms: duration_ms summed across raw per-invocation records in the bucket, per agent_id.",
+      "business_description": "Total wall-clock duration each pipeline agent spent running in the window, showing where time is spent across the pipeline."
+    },
+    "count_issues": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Throughput (issues per week)",
+      "ylabel": "issues",
+      "description": "count_issues: the number of distinct github_issue_number values seen across raw records in the bucket (compute_blended_record).",
+      "business_description": "The number of distinct issues the pipeline processed in each period, a measure of overall delivery throughput."
+    },
+    "ave_cost_usd-issue": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Cost per completed issue",
+      "ylabel": "cost (USD)",
+      "description": "ave_cost_usd-issue: sum_cost_usd divided by count_issues for the bucket.",
+      "business_description": "Average Anthropic API spend (USD) per completed issue in the period, a unit-economics view of pipeline cost."
+    },
+    "ratio_value_add-issue": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Value-add ratio",
+      "ylabel": "ratio (0-1)",
+      "description": "compute_value_add_ratio: the average (value-add cost / total cost) ratio across issues in the bucket, with the spike carve-out rules from issue #533 applied.",
+      "business_description": "The share of agent invocations in the period classified as value-add work (feature or research) rather than overhead, with a spike carve-out applied by the metrics aggregator."
+    },
+    "ratio_classification_mix": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Classification mix (feature and research / total)",
+      "ylabel": "ratio (0-1)",
+      "description": "compute_classification_mix: the count of feature-and-research-classified issues divided by (feature-and-research + corrective) issues in the bucket; null-classified issues are excluded from both.",
+      "business_description": "The proportion of invocations classified as feature or research work versus the total, reflecting the balance between forward-looking work and maintenance/overhead."
+    },
+    "ratio_cache_efficiency": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Cache efficiency (cache reads / total cache tokens)",
+      "ylabel": "ratio (0-1)",
+      "description": "sum_cache_read_input_tokens divided by (sum_cache_read_input_tokens + sum_cache_creation_input_tokens) for the bucket.",
+      "business_description": "The share of total cache tokens that were cache reads rather than cache writes, measuring how effectively the pipeline reuses prompt caching across invocations."
+    },
+    "ratio_error_rate": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Blocked/failed rate per invocation",
+      "ylabel": "ratio (0-1)",
+      "description": "count_is_error divided by count_invocations for the bucket.",
+      "business_description": "The proportion of agent invocations in the period that ended in a blocked or failed outcome, a reliability signal for the pipeline."
+    },
+    "ratio_coder_invocations-issue": {
+      "type": "number",
+      "chart_type": "line",
+      "title": "Coder runs per issue",
+      "ylabel": "invocations per issue",
+      "description": "compute_coder_reinvocation_ratio: the count of invocations by any agent_id ending '/coder' divided by the number of distinct github_issue_number values among them, in the bucket.",
+      "business_description": "Average number of times coder ran per issue it touched in the period, reconstructed from invocation counts since the review-cycle:N label pr-reviewer's review_loop writes on each re-invocation is never itself stored in a metrics record. A value of 1.0 means coder's first pass was accepted every time; consistently above 1 means coder is not fixing pr-reviewer's findings on the first attempt."
+    },
+    "count_invocations": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Total agent invocations",
+      "ylabel": "count",
+      "description": "count_invocations: the number of raw per-invocation records in the bucket (compute_blended_record), or per agent_id (compute_per_agent_records).",
+      "business_description": "The total number of agent invocations (one per pipeline step run) recorded in the period, across every agent."
+    },
+    "count_is_error": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Invocations ending in error",
+      "ylabel": "count",
+      "description": "count_is_error: the number of raw records in the bucket whose is_error field is true.",
+      "business_description": "The number of agent invocations in the period the Claude Code CLI itself flagged as an error."
+    },
+    "sum_retry_count": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Retries",
+      "ylabel": "count",
+      "description": "sum_retry_count: retry_count summed across raw per-invocation records in the bucket.",
+      "business_description": "The total number of automatic retries the orchestrator performed across invocations in the period (e.g. after a transient API error)."
+    },
+    "sum_num_turns": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Agent turns",
+      "ylabel": "turns",
+      "description": "sum_num_turns: num_turns summed across raw per-invocation records in the bucket.",
+      "business_description": "The total number of agentic turns -- one model response plus any tool calls it made -- across invocations in the period."
+    },
+    "sum_cache_creation_input_tokens": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Cache tokens written",
+      "ylabel": "tokens",
+      "description": "sum_cache_creation_input_tokens: cache_creation_input_tokens summed across raw per-invocation records in the bucket.",
+      "business_description": "Total tokens written to Anthropic's prompt cache when creating a new cache entry, summed across invocations in the period."
+    },
+    "sum_cache_read_input_tokens": {
+      "type": "integer",
+      "chart_type": "line",
+      "title": "Cache tokens read",
+      "ylabel": "tokens",
+      "description": "sum_cache_read_input_tokens: cache_read_input_tokens summed across raw per-invocation records in the bucket.",
+      "business_description": "Total tokens retrieved from Anthropic's prompt cache rather than reprocessed, summed across invocations in the period."
+    }
   }
 }

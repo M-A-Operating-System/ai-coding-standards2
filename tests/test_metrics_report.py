@@ -938,6 +938,41 @@ class TestScheduledFlow:
 # R9: Report generator documents metric selection, units, and layout
 # ---------------------------------------------------------------------------
 
+class TestKnownMetricsLoadedFromSchema:
+    def test_known_metrics_matches_schema_derived_metrics_exactly(self):
+        """_KNOWN_METRICS must be rebuilt from metrics.schema.json's
+        derived_metrics section, not drift back into a hardcoded list."""
+        import json
+        from pathlib import Path
+        import metrics_report
+        from metrics_report import _KNOWN_METRICS, _BAR_AGENT_STACKED
+
+        schema_path = (
+            Path(__file__).parent.parent / "pipeline" / "schemas" / "metrics.schema.json"
+        )
+        derived = json.loads(schema_path.read_text())["derived_metrics"]
+        keys = [k for k in derived if k != "$comment"]
+
+        assert len(_KNOWN_METRICS) == len(keys)
+        for key, (field, title, ylabel, chart_type, description) in zip(keys, _KNOWN_METRICS):
+            entry = derived[key]
+            assert chart_type == entry["chart_type"]
+            assert title == entry["title"]
+            assert ylabel == entry["ylabel"]
+            assert description == entry["business_description"]
+            if chart_type == _BAR_AGENT_STACKED:
+                components = entry["components"]
+                assert field == (components["in"], components["out"])
+            else:
+                assert field == key
+
+    def test_stacked_labels_sourced_from_schema_components(self):
+        from metrics_report import _STACKED_LABELS
+        assert _STACKED_LABELS[("sum_input_tokens", "sum_output_tokens")] == (
+            "input", "output",
+        )
+
+
 class TestDocumentation:
     def test_module_docstring_describes_metric_selection(self):
         import metrics_report
