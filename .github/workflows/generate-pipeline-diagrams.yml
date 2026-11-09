@@ -5,6 +5,7 @@ on:
     paths:
       - 'pipeline/pipeline.json'
       - 'pipeline/generators/generate_phase_mermaid.py'
+      - 'pipeline/generators/generate_docs.py'
   workflow_dispatch:
 
 permissions:
@@ -35,7 +36,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/product/orchestrator/generated/
+          git add docs/product/orchestrator/generated/ docs/product/_process/pipeline-reference.md
           if git diff --cached --quiet; then
             echo "Diagrams are already up-to-date -- nothing to commit."
           else

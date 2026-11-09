@@ -8,6 +8,7 @@ in docs/product/orchestrator/generated/README.md:
     agents.md          the agent catalogue
     pipeline-steps.md  every step: trigger, dependencies, gate, entitlements
     statuses.md        the label model and its transitions
+    pipeline-reference.md  process overview of the shipped flows and steps
 
 Each replaces a hand-authored document that restated the same facts and
 drifted from them. Nothing here is authored: if a fact is not in
@@ -31,6 +32,7 @@ PIPELINE_DIR = REPO_ROOT / "pipeline"
 PIPELINE_JSON = PIPELINE_DIR / "pipeline.json"
 STATUSES_JSON = REPO_ROOT / "pipeline" / "statuses.json"
 OUT_DIR = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated"
+PROCESS_DIR = REPO_ROOT / "docs" / "product" / "_process"
 
 # entitlement_groups catalog resolution (issue #523) is shared with
 # pipeline_orchestrator.py's loader via entitlement_groups.py, so the two
@@ -330,6 +332,45 @@ def render_steps(pipeline):
     return "\n".join(lines).rstrip() + "\n"
 
 
+# --- pipeline-reference.md ------------------------------------------------
+
+
+def render_process(pipeline):
+    lines = [
+        BANNER.format(source="pipeline/pipeline.json"),
+        "# Shipped Pipeline Reference",
+        "",
+        "This page is generated from the shipped [pipeline definition](../../../pipeline/pipeline.json).",
+        "Steps are listed in configuration order. Dependencies, triggers, and",
+        "approval gates determine when they can run.",
+        "The approval column lists workflow labels. Pull request review and",
+        "merge happen in GitHub.",
+        "",
+        "See the [Product-First process](00_README.md) for the operating model",
+        "and the [detailed pipeline tables](../orchestrator/generated/pipeline-steps.md)",
+        "for exclusions, retries, and tool permissions.",
+    ]
+    for flow_name, flow in _flows(pipeline):
+        lines += ["", f"## {flow_name}", "", f"**Applies to:** {_flow_trigger(flow)}", ""]
+        description = (flow.get("description") or "").strip()
+        if description:
+            lines += [description, ""]
+        lines += [
+            "| Step | Kind | Trigger | Depends on | Approval label |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        for step in flow.get("steps") or []:
+            gate = step.get("human_gate_label") if step.get("human_gate_after") else None
+            approval = _cell(gate)
+            if gate and step.get("self_gates"):
+                approval += " (when requested)"
+            lines.append(
+                f"| `{step['agent']}` | {step.get('type', 'agent')} | {_trigger(step)} "
+                f"| {_cell(step.get('dependencies'))} | {approval} |"
+            )
+    return "\n".join(lines) + "\n"
+
+
 # --- statuses.md -----------------------------------------------------------
 
 
@@ -383,9 +424,10 @@ def build():
     pipeline = _load(PIPELINE_JSON)
     statuses = _load(STATUSES_JSON)
     return {
-        "agents.md": render_agents(pipeline),
-        "pipeline-steps.md": render_steps(pipeline),
-        "statuses.md": render_statuses(statuses),
+        OUT_DIR / "agents.md": render_agents(pipeline),
+        OUT_DIR / "pipeline-steps.md": render_steps(pipeline),
+        OUT_DIR / "statuses.md": render_statuses(statuses),
+        PROCESS_DIR / "pipeline-reference.md": render_process(pipeline),
     }
 
 
@@ -398,17 +440,17 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
     stale = []
-    for name, content in build().items():
-        target = OUT_DIR / name
+    for target, content in build().items():
+        relative_path = str(target.relative_to(REPO_ROOT))
         if args.check:
             current = target.read_text() if target.exists() else None
             if current != content:
-                stale.append(name)
+                stale.append(relative_path)
         else:
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
-            print(f"wrote {target.relative_to(REPO_ROOT)}")
+            print(f"wrote {relative_path}")
 
     if args.check:
         if stale:

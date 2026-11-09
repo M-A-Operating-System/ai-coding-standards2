@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Check generated docs (agents.md, pipeline-steps.md, statuses.md)
+      - name: Check generated pipeline and status documentation
         run: python3 pipeline/generators/generate_docs.py --check
 
       - name: Check generated Mermaid diagrams

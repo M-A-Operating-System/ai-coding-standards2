@@ -99,5 +99,4 @@ rest as reference you consult when a question comes up.
   authoring conventions for the JSON itself.
 - [`14-standards.md`](../14-standards.md) — the shared standards this vocabulary
   helps apply to design and implementation.
-- [`05_product-architecture-and-technical-architecture.md`](../../_process/05_product-architecture-and-technical-architecture.md)
-  — the architecture narrative this documentation sits within.
+- [Product and technical architecture](../../_process/02_product-led-design.md#product-architecture-and-technical-architecture) explains how the two views connect through capabilities.
