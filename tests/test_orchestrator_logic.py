@@ -2500,6 +2500,47 @@ class TestPhasesFilter:
             "rather than silently dropping it or scanning every open item"
         )
 
+    def test_onboard_and_bump_jobs_grant_workflows_write(self):
+        """Onboard/Bump must be able to commit a changed .github/workflows/*
+        file (so a consuming repo actually picks up a newer orchestrator or
+        emergency-stop workflow), which GitHub rejects under plain
+        contents: write. Each job overrides the workflow-level permissions
+        block, so the grant must be declared on each job directly, not just
+        once at the top of the file."""
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "ai_orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        content = path.read_text()
+        import yaml
+        doc = yaml.safe_load(content)
+        jobs = doc["jobs"]
+        for job_name in ("onboard", "bump"):
+            job_permissions = jobs[job_name].get("permissions")
+            assert job_permissions is not None, (
+                f"ai_orchestrator.yml's '{job_name}' job must declare its own "
+                f"permissions block including workflows: write"
+            )
+            assert job_permissions.get("workflows") == "write", (
+                f"ai_orchestrator.yml's '{job_name}' job must grant workflows: write "
+                f"so it can commit a changed .github/workflows/* file"
+            )
+
+    def test_onboard_refresh_action_stages_the_two_workflow_files(self):
+        """The onboarding commit step must stage both pipeline workflow
+        files, not just the non-workflow managed files, so a submodule
+        update to either workflow actually lands in the consuming repo."""
+        path = (
+            Path(__file__).parent.parent / ".github" / "actions"
+            / "ai-onboard-refresh" / "action.yml"
+        )
+        assert path.exists(), f"Composite action not found: {path}"
+        content = path.read_text()
+        assert ".github/workflows/ai_orchestrator.yml" in content, (
+            "ai-onboard-refresh/action.yml must stage ai_orchestrator.yml for commit"
+        )
+        assert ".github/workflows/ai_emergency_stop.yml" in content, (
+            "ai-onboard-refresh/action.yml must stage ai_emergency_stop.yml for commit"
+        )
+
 
 # ---------------------------------------------------------------------------
 # QA-001: TestHandleReviewLoop

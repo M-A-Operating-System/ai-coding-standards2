@@ -1228,14 +1228,19 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
 
     This is what the Onboard job in ai_orchestrator.yml runs (get_started.py
     --full --force). It lays down the whole `.claude` symlink, the `standards`
-    symlink, the local `adrs/` folder, requirements, and the root-level
-    CLAUDE.md link -- everything a consuming repo needs to run the pipeline.
-    The two pipeline workflows (ai_orchestrator, ai_emergency_stop) are
-    committed during the seed step, not here, so the Onboard job never has to
-    push `.github/workflows/*` (which would require a workflow-scoped token);
-    the Onboard job commits only non-workflow files. Each step is one
-    install_* function; the order is stable so the printed log reads
-    top-to-bottom.
+    symlink, the local `adrs/` folder, requirements, the root-level CLAUDE.md
+    link, and re-copies the two pipeline workflows (ai_orchestrator,
+    ai_emergency_stop) from the submodule's current version -- everything a
+    consuming repo needs to run the pipeline. The seed step (run_seed) is
+    still what installs those two workflows the very first time, before any
+    workflow exists to run this job at all; --full re-copying them on every
+    Onboard/Bump run is what lets a later submodule update actually update a
+    consuming repo's copy. Committing a changed .github/workflows/* file
+    needs the calling job to hold the `workflows: write` permission (see
+    ai_onboard-refresh/action.yml's commit step and ai_orchestrator.yml's
+    onboard/bump jobs); plain `contents: write` is rejected by GitHub for
+    workflow-file changes. Each step is one install_* function; the order is
+    stable so the printed log reads top-to-bottom.
 
     install_claude_md() also runs here (not just in run_seed()) so a developer
     who runs --full directly, without ever running --seed first, still gets

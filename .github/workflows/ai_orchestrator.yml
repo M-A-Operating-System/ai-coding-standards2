@@ -73,13 +73,22 @@ jobs:
   #   Actions -> AI - Orchestrator -> Run workflow -> OK: Onboard
   # It calls get_started.py --full --force on a Linux runner, which creates the
   # .claude and standards symlinks, seeds adrs/ and requirements, bootstraps the
-  # pipeline labels, then commits and pushes the NON-workflow files. It never
-  # pushes a .github/workflows/* file, so the token needs no workflow scope.
-  # After this job completes, open an issue to start the normal pipeline.
+  # pipeline labels, then commits and pushes every managed file -- including the
+  # two workflow files themselves, re-copied from the submodule's current
+  # version. Pushing a changed .github/workflows/* file needs the `workflows:
+  # write` permission below (plain `contents: write` is rejected by GitHub for
+  # workflow-file changes); that is why this job overrides the workflow-level
+  # permissions block instead of inheriting it. After this job completes, open
+  # an issue to start the normal pipeline.
   onboard:
     name: Onboard
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      workflows: write
     steps:
       # Not pinned to main, unlike the orchestrate job below: onboard is
       # workflow_dispatch-only and never runs on a pull_request, so there is no
@@ -106,6 +115,11 @@ jobs:
     name: Bump
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.bump == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      workflows: write
     steps:
       # Not pinned to main for the same reason as onboard: workflow_dispatch-only,
       # never runs on a pull_request, so there is no untrusted ref to pin from.

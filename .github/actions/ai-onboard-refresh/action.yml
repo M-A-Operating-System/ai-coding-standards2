@@ -36,9 +36,13 @@ runs:
         python scripts/migrate_labels.py
 
     - name: Stage and commit managed files
-      # Commits only non-workflow files -- the onboard token needs no workflow
-      # scope. Force-stage the gitignored whole-folder symlinks (.claude and
-      # standards). Falls back to a PR branch if direct push is blocked.
+      # Force-stage the gitignored whole-folder symlinks (.claude and
+      # standards), plus the two pipeline workflow files so a re-run after a
+      # submodule change picks up their latest version. Pushing a changed
+      # .github/workflows/* file requires the calling job to grant `workflows:
+      # write` (see ai_orchestrator.yml's onboard/bump jobs) -- plain
+      # `contents: write` is rejected by GitHub for workflow-file changes.
+      # Falls back to a PR branch if direct push is blocked.
       shell: bash
       run: |
         git config user.name "github-actions[bot]"
@@ -47,7 +51,9 @@ runs:
         git add -f \
           .claude \
           standards \
-          .gitignore
+          .gitignore \
+          .github/workflows/ai_orchestrator.yml \
+          .github/workflows/ai_emergency_stop.yml
 
         git add adrs requirements.txt 2>/dev/null || true
 
