@@ -17,6 +17,7 @@ human-readable views are generated from machine-readable sources.
 |---|---|---|
 | `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
 | `pipeline-steps.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
+| [Process pipeline reference](../../_process/pipeline-reference.md) | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
 | `statuses.md` | `pipeline/statuses.json` | `pipeline/generators/generate_docs.py` |
 | `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
 | `pipeline_phases.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |

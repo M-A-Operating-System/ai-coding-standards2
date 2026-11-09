@@ -88,7 +88,7 @@ class TestAdrExceptionIndex:
         assert adr_exception_index(records, _OVERRIDABLE_STD) == {"ADR-002": {"STD-ARCH-035"}}
 
     def test_standard_marked_non_overridable_contributes_nothing(self):
-        """docs/product/standards/14-standards.md: "adr_overridable: false --
+        """docs/product/standards_taxonomy/14-standards.md: "adr_overridable: false --
         always blocks; no exception is possible" -- an ADR cannot waive a
         standard that says it can never be waived, no matter what its own
         authorises_exception_to claims."""
