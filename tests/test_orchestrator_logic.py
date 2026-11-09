@@ -2540,6 +2540,12 @@ class TestPhasesFilter:
         assert ".github/workflows/ai_emergency_stop.yml" in content, (
             "ai-onboard-refresh/action.yml must stage ai_emergency_stop.yml for commit"
         )
+        assert ".github/actions" in content, (
+            "ai-onboard-refresh/action.yml must stage .github/actions so a newer "
+            "version of this composite action itself can ever reach a consuming "
+            "repo -- otherwise install_orchestrator_actions()'s on-disk rewrite "
+            "of this very file is discarded every run with nothing to commit it"
+        )
 
 
 # ---------------------------------------------------------------------------

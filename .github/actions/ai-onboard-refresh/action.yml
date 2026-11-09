@@ -37,12 +37,26 @@ runs:
 
     - name: Stage and commit managed files
       # Force-stage the gitignored whole-folder symlinks (.claude and
-      # standards), plus the two pipeline workflow files so a re-run after a
-      # submodule change picks up their latest version. Pushing a changed
+      # standards), the two pipeline workflow files, and this job's own
+      # composite action -- all three are rewritten on disk by the "Run
+      # onboarding" step above and must be staged here or the rewrite is
+      # silently discarded when the runner is torn down. Pushing a changed
       # .github/workflows/* file requires the calling job to grant `workflows:
       # write` (see ai_orchestrator.yml's onboard/bump jobs) -- plain
       # `contents: write` is rejected by GitHub for workflow-file changes.
       # Falls back to a PR branch if direct push is blocked.
+      #
+      # Self-reference note: a composite action's steps are resolved once,
+      # from the committed action.yml, when the job starts -- not re-read
+      # mid-run. So staging .github/actions here (this file) never changes
+      # what THIS run does; it only means the NEXT run picks up a newer
+      # version. A consuming repo whose committed action.yml predates this
+      # file's own git-add list (i.e. it never staged .github/ at all) can
+      # never self-heal through Onboard/Bump alone -- nothing in the old
+      # step adds .github/ to git, so get_started.py's on-disk rewrite of
+      # this very file is discarded every run. Breaking that deadlock needs
+      # one manual commit of the current submodule's action.yml (and the two
+      # workflow files) directly to the consuming repo's default branch.
       shell: bash
       run: |
         git config user.name "github-actions[bot]"
@@ -53,7 +67,8 @@ runs:
           standards \
           .gitignore \
           .github/workflows/ai_orchestrator.yml \
-          .github/workflows/ai_emergency_stop.yml
+          .github/workflows/ai_emergency_stop.yml \
+          .github/actions
 
         git add adrs requirements.txt 2>/dev/null || true
 
