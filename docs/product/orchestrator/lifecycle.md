@@ -276,4 +276,4 @@ It fires on a weekly cron and supports manual dispatch.
 | Publication gates | A coverage threshold and configured exclusion rules filter the set; a duplicate-release check prevents creating a tag or release that already exists |
 | Publication | A GitHub Release is created with the generated notes as its body |
 | Logging | Release metadata, final status, and any errors are recorded in orchestrator logs after every run |
-| Parallel operation | The existing Wednesday GitHub Actions workflow continues to run alongside the orchestrator release flow until shadow-run parity is confirmed (sub-issue 3/3) |
+| Fallback path | The `RELEASE - publish` GitHub Actions workflow (`.github/workflows/release.yml`) no longer runs on the Wednesday schedule (issue #621 cutover); it remains for an off-cycle `v*` tag push or an emergency manual dispatch |

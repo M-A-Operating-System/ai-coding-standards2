@@ -19,12 +19,15 @@ removed so it no longer independently publishes releases.
 1. `scripts/run-release-flow.sh` implemented and validated (#620).
 2. `scripts/shadow_compare.py` implemented and validated (#603). Shadow-run
    comparison ran via the `RELEASE - publish` workflow to confirm that the
-   Python generator's output matches the GitHub-generated notes before cutover.
+   Python generator's output matched the GitHub-generated notes before
+   cutover. Removed after cutover, once that parity was confirmed — the thing
+   it validated against (the old scheduled run) no longer exists to compare
+   against.
 3. The `weekly-release` flow added to `pipeline/pipeline.json` with a
    Wednesday cron trigger and `scripts/run-release-flow.sh` as the script step.
-4. The `schedule` trigger removed from `.github/workflows/release.yml` (this
-   change). The workflow still fires on `push: tags: v*` for off-cycle
-   releases and on `workflow_dispatch` for emergency manual releases.
+4. The `schedule` trigger removed from `.github/workflows/release.yml`. The
+   workflow still fires on `push: tags: v*` for off-cycle releases and on
+   `workflow_dispatch` for emergency manual releases.
 
 ## Triggers after cutover
 

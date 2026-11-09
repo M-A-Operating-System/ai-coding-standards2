@@ -18,12 +18,6 @@
 **When** the Python generator computes the release window
 **Then** a diagnostic message identifying the discrepancy is written to the CI log
 
-## Scenario: Shadow-run comparison confirms full coverage before production cutover
-
-**Given** GitHub-generated release notes exist for a prior release
-**When** the historical shadow-run comparison is executed
-**Then** the comparison report confirms all PRs and issues present in the GitHub-generated notes are also present in the Python generator output
-
 ## Scenario: PRs outside selected window excluded with diagnostics in CI log
 
 **Given** the release window is computed and some merged PRs fall outside it
