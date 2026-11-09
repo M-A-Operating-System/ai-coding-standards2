@@ -985,6 +985,29 @@ class TestMetricsSchema:
                 f"{f}: description must cite the Anthropic API usage object"
             )
 
+    def test_every_property_also_carries_a_nonempty_business_description(self):
+        """Each property's `description` is the technical provenance; a
+        separate `business_description` must give the plain-English
+        "what this means and why it's in the report" reading, so the
+        published schema.json doubles as the field's data-dictionary entry
+        without requiring a separate hand-maintained document."""
+        props = METRICS_SCHEMA.get("properties", {})
+        for name, spec in props.items():
+            biz = spec.get("business_description")
+            assert biz and biz.strip(), f"property {name!r} has no business_description"
+            assert biz != spec.get("description"), (
+                f"property {name!r}: business_description must not just repeat description"
+            )
+
+    def test_metrics_schema_is_loaded_from_its_own_file(self):
+        """METRICS_SCHEMA must be sourced from pipeline/schemas/metrics.schema.json
+        -- the single source of truth also published to ai-agile/metrics as
+        schema.json -- not kept as a second, driftable inline copy."""
+        schema_path = Path(__file__).parent.parent / "pipeline" / "schemas" / "metrics.schema.json"
+        assert schema_path.exists(), f"schema file not found: {schema_path}"
+        on_disk = json.loads(schema_path.read_text())
+        assert METRICS_SCHEMA == on_disk
+
 
 # ---------------------------------------------------------------------------
 # TestDurationMsComputation

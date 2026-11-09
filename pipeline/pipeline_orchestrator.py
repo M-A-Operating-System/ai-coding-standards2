@@ -1399,134 +1399,18 @@ METRICS_BRANCH = "ai-agile/metrics"
 METRICS_RECORDS_FILE = "records.jsonl"
 METRICS_SCHEMA_FILE = "schema.json"
 
-# Required-minimum JSON Schema for metrics records.
-# additionalProperties: true ensures future CLI fields are not rejected.
-# Null is accepted for every AI-specific field so scripted-step records
-# (which set those fields to null) pass validation without a separate schema.
-METRICS_SCHEMA: dict = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "AI Agile Metrics Record",
-    "description": (
-        "Per-cycle orchestrator metrics. Required fields are the floor; "
-        "additionalProperties: true allows future CLI additions."
-    ),
-    "type": "object",
-    "required": [
-        "timestamp_start", "timestamp_end", "github_issue_number",
-        "agent_id", "cycle_id", "duration_ms",
-        "input_tokens", "output_tokens", "retry_count", "retry_errors",
-        "classification",
-    ],
-    "additionalProperties": True,
-    "properties": {
-        "timestamp_start": {"type": "string", "description": "ISO 8601 UTC timestamp when the orchestrator launched the step"},
-        "timestamp_end":   {"type": "string", "description": "ISO 8601 UTC timestamp when the orchestrator observed step completion"},
-        "github_issue_number": {
-            "type": ["integer", "null"],
-            "description": "The GitHub issue or PR number this invocation was dispatched for, or null for a scheduled/maintenance step with no single work item (orchestrator-defined).",
-        },
-        "agent_id": {
-            "type": "string",
-            "description": "The pipeline.json step name that ran (e.g. '03_execute/coder'), or 'metrics-aggregator' for an aggregate rollup row (orchestrator-defined).",
-        },
-        "branch_id": {
-            "type": ["string", "null"],
-            "description": "The git branch the step ran against (e.g. 'issue-123'), or null when the step has no branch (orchestrator-defined).",
-        },
-        "pr_id": {
-            "type": ["integer", "null"],
-            "description": "The pull request number the step reviewed or acted on, or null when none applies (orchestrator-defined).",
-        },
-        "cycle_id": {
-            "type": "string",
-            "description": "A UUID identifying this one invocation's metrics row, generated fresh per run -- not a count of how many times the step has run (orchestrator-defined).",
-        },
-        "session_id": {
-            "type": ["string", "null"],
-            "description": "The Claude Code CLI session identifier for this invocation, from the CLI's own init event (Claude Code CLI).",
-        },
-        "model": {
-            "type": ["string", "null"],
-            "description": "The Claude model that served this invocation (e.g. 'claude-sonnet-4-6'), from the CLI's own init event (Claude Code CLI).",
-        },
-        "cwd": {
-            "type": ["string", "null"],
-            "description": "The working directory the CLI invocation ran in, from the CLI's own init event (Claude Code CLI).",
-        },
-        "permission_mode": {
-            "type": ["string", "null"],
-            "description": "The CLI permission mode in effect for this invocation (e.g. 'default', 'bypassPermissions'), from the CLI's own init event (Claude Code CLI).",
-        },
-        "tools_available": {
-            "type": ["string", "null"],
-            "description": "The comma-separated list of tool names the CLI made available to the model for this invocation, from the CLI's own init event (Claude Code CLI).",
-        },
-        "mcp_servers": {
-            "type": ["string", "null"],
-            "description": "The MCP servers connected for this invocation, from the CLI's own init event (Claude Code CLI).",
-        },
-        "subtype": {
-            "type": ["string", "null"],
-            "description": "The CLI result event's subtype (e.g. 'success', 'error_max_turns'), from the CLI's own result event (Claude Code CLI).",
-        },
-        "is_error": {
-            "type": ["boolean", "null"],
-            "description": "Whether the CLI itself reported this invocation as an error, from the CLI's own result event (Claude Code CLI).",
-        },
-        "duration_ms": {
-            "type": "integer", "minimum": 0,
-            "description": "Total wall-clock duration of the invocation in milliseconds, from the CLI's own result event (Claude Code CLI).",
-        },
-        "duration_api_ms": {
-            "type": "integer", "minimum": 0,
-            "description": "Wall-clock time spent waiting on the Anthropic API specifically, a subset of duration_ms, from the CLI's own result event (Claude Code CLI).",
-        },
-        "num_turns": {
-            "type": "integer", "minimum": 0,
-            "description": "The number of agentic turns (one model response, plus any tool calls it made) the invocation took to reach its final result, from the CLI's own result event (Claude Code CLI).",
-        },
-        "input_tokens": {
-            "type": "integer", "minimum": 0,
-            "description": "Number of input tokens that were not read from or used to create a cache -- tokens after the last cache breakpoint (Anthropic API usage object).",
-        },
-        "output_tokens": {
-            "type": "integer", "minimum": 0,
-            "description": "The number of tokens Claude generated in its response, billed at the output-token rate (Anthropic API usage object).",
-        },
-        "cache_creation_input_tokens": {
-            "type": "integer", "minimum": 0,
-            "description": "Number of tokens written to the prompt cache when creating a new cache entry (Anthropic API usage object).",
-        },
-        "cache_read_input_tokens": {
-            "type": "integer", "minimum": 0,
-            "description": "Number of tokens retrieved from the prompt cache for this request, rather than reprocessed (Anthropic API usage object).",
-        },
-        "web_search_requests": {
-            "type": "integer", "minimum": 0,
-            "description": "The number of web search tool calls the invocation made, from the CLI's own result event usage object (Claude Code CLI).",
-        },
-        "service_tier": {
-            "type": ["string", "null"],
-            "description": "The Anthropic API service tier this invocation was billed under (e.g. 'standard'), from the CLI's own result event (Claude Code CLI).",
-        },
-        "total_cost_usd": {
-            "type": "number", "minimum": 0,
-            "description": "The invocation's total Anthropic API spend in USD, as computed by the CLI from token usage and model pricing, from the CLI's own result event (Claude Code CLI).",
-        },
-        "retry_count": {
-            "type": "integer", "minimum": 0,
-            "description": "The number of automatic retries the orchestrator performed for this invocation (e.g. after a transient API error) (orchestrator-defined).",
-        },
-        "retry_errors": {
-            "type": "array", "items": {"type": "string"},
-            "description": "One entry per retry, naming the error that triggered it (orchestrator-defined).",
-        },
-        "classification": {
-            "type": ["string", "null"],
-            "description": "The issue's classification label (e.g. 'enhancement', 'bug', 'spike') as set by 01_product_docs/issue-classifier, or null before classification runs (orchestrator-defined).",
-        },
-    },
-}
+# Required-minimum JSON Schema for metrics records, loaded from its own file
+# (pipeline/schemas/metrics.schema.json) rather than kept as an inline dict,
+# matching pr-review.schema.json/standards.schema.json's pattern -- the
+# schema file is the single source of truth, both for what gets published to
+# ai-agile/metrics as schema.json and for any future human-readable
+# reference generated from it. additionalProperties: true ensures future CLI
+# fields are not rejected. Null is accepted for every AI-specific field so
+# scripted-step records (which set those fields to null) pass validation
+# without a separate schema.
+METRICS_SCHEMA: dict = json.loads(
+    (Path(__file__).parent / "schemas" / "metrics.schema.json").read_text()
+)
 
 # Fields from system/init and result events that are explicitly mapped to
 # canonical names — excluded from the "extra" pass-through so they don't
