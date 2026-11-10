@@ -41,10 +41,13 @@ runs:
       # composite action -- all three are rewritten on disk by the "Run
       # onboarding" step above and must be staged here or the rewrite is
       # silently discarded when the runner is torn down. Pushing a changed
-      # .github/workflows/* file requires the calling job to grant `workflows:
-      # write` (see ai_orchestrator.yml's onboard/bump jobs) -- plain
-      # `contents: write` is rejected by GitHub for workflow-file changes.
-      # Falls back to a PR branch if direct push is blocked.
+      # .github/workflows/* file is something no `permissions:` setting can
+      # grant the default GITHUB_TOKEN -- there is no "workflows" permission
+      # key (GitHub rejects the whole workflow file if one is added). It
+      # requires a PAT with the classic "workflow" OAuth scope, which is what
+      # secrets.AI_AGILE_BOT_TOKEN supplies via the calling job's checkout
+      # step. Falls back to a PR branch if direct push is blocked (missing
+      # scope or branch protection, indistinguishable from here).
       #
       # Self-reference note: a composite action's steps are resolved once,
       # from the committed action.yml, when the job starts -- not re-read

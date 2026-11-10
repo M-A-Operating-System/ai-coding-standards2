@@ -1241,10 +1241,13 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     workflow exists to run this job at all; --full re-copying them on every
     Onboard/Bump run is what lets a later submodule update actually update a
     consuming repo's copy. Committing a changed .github/workflows/* file
-    needs the calling job to hold the `workflows: write` permission (see
-    ai_onboard-refresh/action.yml's commit step and ai_orchestrator.yml's
-    onboard/bump jobs); plain `contents: write` is rejected by GitHub for
-    workflow-file changes. Each step is one install_* function; the order is
+    needs a PAT carrying the classic "workflow" OAuth scope (see
+    ai-onboard-refresh/action.yml's commit step and ai_orchestrator.yml's
+    onboard/bump jobs, which pass secrets.AI_AGILE_BOT_TOKEN to checkout for
+    exactly this) -- no `permissions:` setting can grant the default
+    GITHUB_TOKEN this; there is no "workflows" permission key, and GitHub
+    rejects the whole workflow file if one is added. Each step is one
+    install_* function; the order is
     stable so the printed log reads top-to-bottom.
 
     install_claude_md() also runs here (not just in run_seed()) so a developer

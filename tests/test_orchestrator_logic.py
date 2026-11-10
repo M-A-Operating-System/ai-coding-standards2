@@ -2500,29 +2500,40 @@ class TestPhasesFilter:
             "rather than silently dropping it or scanning every open item"
         )
 
-    def test_onboard_and_bump_jobs_grant_workflows_write(self):
-        """Onboard/Bump must be able to commit a changed .github/workflows/*
-        file (so a consuming repo actually picks up a newer orchestrator or
-        emergency-stop workflow), which GitHub rejects under plain
-        contents: write. Each job overrides the workflow-level permissions
-        block, so the grant must be declared on each job directly, not just
-        once at the top of the file."""
-        path = Path(__file__).parent.parent / ".github" / "workflows" / "ai_orchestrator.yml"
-        assert path.exists(), f"Workflow file not found: {path}"
-        content = path.read_text()
+    def test_no_workflow_declares_an_invalid_permission_key(self):
+        """`workflows` is NOT a real GitHub Actions permission key -- there is
+        no way to grant the default GITHUB_TOKEN the ability to push a
+        .github/workflows/* change via `permissions:`. Adding one doesn't
+        just fail to grant anything: GitHub rejects the ENTIRE workflow file
+        at trigger time ("Unexpected value 'workflows'"), so every push,
+        issue, PR, schedule, and workflow_dispatch trigger fails before any
+        job runs. This happened for real (c56c2769..e12f4013 on main) and
+        broke the orchestrator across every repo it had been synced to.
+        Pushing a workflow-file change instead requires a PAT with the
+        classic "workflow" OAuth scope (secrets.AI_AGILE_BOT_TOKEN), used as
+        the checkout token -- never a `permissions:` entry."""
+        valid_keys = {
+            "actions", "attestations", "checks", "contents", "deployments",
+            "discussions", "id-token", "issues", "packages", "pages",
+            "pull-requests", "repository-projects", "security-events",
+            "statuses",
+        }
         import yaml
-        doc = yaml.safe_load(content)
-        jobs = doc["jobs"]
-        for job_name in ("onboard", "bump"):
-            job_permissions = jobs[job_name].get("permissions")
-            assert job_permissions is not None, (
-                f"ai_orchestrator.yml's '{job_name}' job must declare its own "
-                f"permissions block including workflows: write"
-            )
-            assert job_permissions.get("workflows") == "write", (
-                f"ai_orchestrator.yml's '{job_name}' job must grant workflows: write "
-                f"so it can commit a changed .github/workflows/* file"
-            )
+        workflows_dir = Path(__file__).parent.parent / ".github" / "workflows"
+        for path in sorted(workflows_dir.glob("*.yml")):
+            doc = yaml.safe_load(path.read_text())
+            permission_blocks = [doc.get("permissions")]
+            for job in (doc.get("jobs") or {}).values():
+                permission_blocks.append(job.get("permissions"))
+            for block in permission_blocks:
+                if not isinstance(block, dict):
+                    continue
+                invalid = set(block) - valid_keys
+                assert not invalid, (
+                    f"{path.name}: invalid permission key(s) {invalid} -- GitHub "
+                    f"rejects the whole workflow file if any of these appear, "
+                    f"not just the one job's grant"
+                )
 
     def test_onboard_refresh_action_stages_the_two_workflow_files(self):
         """The onboarding commit step must stage both pipeline workflow
