@@ -1,0 +1,121 @@
+{
+  "$schema": "../pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "org",
+  "category": "seo",
+  "description": "Org-level SEO standards for marketing/guide content on a Lovable-hosted Vite/React single-page app. Generalized from issue #39/PR #40 on tryunfurl: a raw-HTTP-response SEO defect that left ~90% of marketing pages unindexed by Google, and the sub-bugs its fix surfaced. Each standard carries a tech_stack tag -- apply judgment against the repo actually under review; these are not universal across every consuming repo's stack.",
+  "standards": [
+    {
+      "id": "STD-SEO-001",
+      "title": "Every indexable route must be correct in the raw HTTP response, not only after JS runs",
+      "description": "A route's server-delivered HTML (curl <url>, no JS) must contain that page's own <title>, <meta description>, <link rel=\"canonical\">, Open Graph/Twitter tags, and Schema.org JSON-LD. A client-side head manager (Helmet, etc.) correcting these after mount does not satisfy this -- Google's first-pass crawl, which drives most indexing/discovery decisions, reads the raw response.",
+      "rationale": "This was the entire root cause of issue #39. A generic SPA shell at every route is indistinguishable from a site-wide duplicate-content signal. In production, watch Search Console's Page Indexing report: a 'Discovered/Crawled -- currently not indexed' count above low single digits for a site this size is a signal this standard (or STD-SEO-002/003) is broken, not a content-quality problem to write around.",
+      "acceptance_criteria": [
+        "curl <any indexable route> returns a title/description/canonical specific to that route, never the homepage's.",
+        "The canonical tag's URL matches the route actually being requested.",
+        "The raw meta description is 120-140 characters.",
+        "Any raw OG image meta tag points at a 1200x630px (1.91:1) image.",
+        "Raw Schema.org JSON-LD includes every field Google requires for its declared @type."
+      ],
+      "anti_patterns": [
+        "Relying on react-helmet-async/similar to inject page metadata with no server-side or build-time equivalent for the raw response."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    },
+    {
+      "id": "STD-SEO-002",
+      "title": "Pre-rendered content must physically exist at the URL structure the host actually resolves",
+      "description": "If content is pre-rendered to static HTML, the output file's path must be one the live hosting environment will actually serve for the real route -- verified empirically against that host, not assumed. A file nobody links to and that isn't in the sitemap doesn't count, no matter how correct its content is.",
+      "rationale": "Before the fix, generate-static.mjs wrote correct content to public/<slug>.html, which was never reachable from /<slug> -- an orphaned artifact. 'The generator runs' is not the acceptance bar; 'the content is reachable at the real route' is.",
+      "acceptance_criteria": [
+        "The sitemap's <loc> URLs and the pre-rendered file's own canonical tag are the exact same URL.",
+        "That URL is verified against the live/staging host (not just a local dev server) to actually serve the pre-rendered file's content, including trailing-slash behaviour."
+      ],
+      "anti_patterns": [
+        "Generating a path shape not reachable by the sitemap-listed URL."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    },
+    {
+      "id": "STD-SEO-003",
+      "title": "The SPA's client bundle must mount over every pre-rendered route, not just the homepage",
+      "description": "If a route has pre-rendered static HTML for crawlers, a real browser hitting that same URL must still get the full interactive app, not a frozen static page. The build process must treat every pre-rendered HTML file as a build entry point that gets the same JS-bundle wiring the homepage gets, not a static asset copied verbatim.",
+      "rationale": "A 'static shell + app loads separately' split (what this codebase had before the fix) looks like it works until someone actually tries to use the live app on one of those pages.",
+      "acceptance_criteria": [
+        "Loading any pre-rendered route in a real browser renders the live, interactive app (verified with a headless-browser check, not just curl) -- confirm a component unique to the real app (e.g. the live nav) is present post-load."
+      ],
+      "anti_patterns": [
+        "Treating pre-rendered pages as pure static assets (e.g. Vite's publicDir, which is copied verbatim and never build-processed)."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    },
+    {
+      "id": "STD-SEO-004",
+      "title": "No duplicate head tags after hydration",
+      "description": "When a client-side head manager mounts on top of pre-rendered static HTML, it must not simply append its own title/meta/canonical tags alongside the static ones already present -- the result must be exactly one of each.",
+      "rationale": "react-helmet-async (and similar libraries) only track tags they inserted; they have no knowledge of pre-existing static ones. Confirmed via headless-browser inspection of the rendered DOM: this produced two <title>, two <link rel=\"canonical\">, etc., on every page, until a one-time cleanup was added before the app mounts.",
+      "acceptance_criteria": [
+        "Inspecting the rendered DOM (not the initial HTML) post-hydration shows exactly one <title>, one <link rel=\"canonical\">, one <meta name=\"description\">, and one of each OG/Twitter tag."
+      ],
+      "anti_patterns": [
+        "Assuming a head-tag library 'just handles it' without checking the actual rendered DOM."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    },
+    {
+      "id": "STD-SEO-005",
+      "title": "Internal links must consistently use the exact URL form the host resolves, end to end",
+      "description": "Every internal link -- in content, templates, and generated data files, not only the canonical/sitemap entries -- must be an absolute path matching the app's actual, resolvable route: same leading slash, same trailing-slash convention, never a relative or .html-suffixed form.",
+      "rationale": "Found ~30 instances where markdown content used relative .html links, which the app's link-rendering logic (markdownComponents.tsx) only gives SPA-navigation treatment to when they start with / -- otherwise they render as external-style links (new tab) and 404 once any shadow file is removed. Separately, after adopting the trailing-slash convention from STD-SEO-002, a follow-up review found the fix hadn't propagated past the top-level canonical/sitemap: internal links in a generated data file's related array and the generated page template's own nav/footer still used the no-slash form -- meaning a crawler following any in-page link, one hop removed from the entry URL, lands right back on the wrong raw content. A URL-structure decision isn't done when the sitemap is correct; it's done when every internal reference to that URL agrees with it.",
+      "acceptance_criteria": [
+        "No internal link matches a relative or .html-suffixed form.",
+        "Every internal link's trailing-slash convention matches the canonical/sitemap entry for that same route -- checked by actually following the link (raw HTTP, no JS), not just by eye."
+      ],
+      "anti_patterns": [
+        "Fixing a URL convention only where it's most visible (sitemap, canonical tags) and assuming internal links inherited it; copy-pasting a link target that matches a generated file's name rather than the app's resolvable route."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    },
+    {
+      "id": "STD-SEO-006",
+      "title": "Static-content generation must be independently triggerable and auditable",
+      "description": "Whatever regenerates SEO-relevant static output (sitemap, pre-rendered pages) from source content must run as an explicit, visible step (e.g. a CI workflow with its own trigger, logs, and commit history) -- not only as an undocumented side effect of a platform's own build/deploy pipeline. That step's automated commit must also be scope-guarded: asserting what it expects to change, not silently staging and pushing whatever happens to be dirty in the working tree.",
+      "rationale": "Before this generation moved off the hosting platform's own pipeline, it happened only when that pipeline built the app, producing opaque commits with no indication of why generated files changed, and no way to re-run or inspect it independently. Once generation moved to its own CI workflow, the commit step necessarily widened to an unscoped git add -A (output now lands in dynamically-named directories no fixed path list can cover) -- which quietly removed the one guard that limited the bot's commit to known generated output. A dynamic output location and an unscoped auto-commit are a standing risk together: any stray file from a future script's side effect, or a lockfile drift, gets silently swept into an automated push to main with no review.",
+      "acceptance_criteria": [
+        "A content change triggers a visible, re-runnable, independently-logged generation step; its commits are clearly attributable to that step, not a generic platform message.",
+        "Before committing, the step asserts that every staged path matches an expected pattern for known generated output, and fails loudly rather than committing silently if anything else is staged."
+      ],
+      "anti_patterns": [
+        "git add -A (or equivalent) with no corresponding check on what actually got staged."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    },
+    {
+      "id": "STD-SEO-007",
+      "title": "Generators that write per-content-item output must also prune output for content that's gone",
+      "description": "A script that generates one output artifact per source content item (e.g. one pre-rendered page per markdown file) must, as part of the same run, detect and remove output for items that no longer exist -- a renamed or deleted source file must not leave its old generated artifact behind.",
+      "rationale": "generate-static.mjs only ever creates or overwrites <slug>/index.html for markdown files currently present; renaming or deleting a content file leaves the old slug's output on disk indefinitely, serving stale title/canonical/Schema.org data at a URL that no longer has a corresponding source -- duplicating the page under two URLs instead of one. This risk predates a per-page-directory layout (an earlier flat public/<slug>.html layout had it too), but matters more once generated output sits at the repo root rather than inside a dedicated public/ folder, where an orphan is more likely to be mistaken for an intentional top-level path.",
+      "acceptance_criteria": [
+        "Renaming or deleting a source content file, then re-running the generator, leaves no stale output for the old identifier -- verified by diffing the generator's output directory against the current source set after a rename/delete."
+      ],
+      "anti_patterns": [
+        "A generation script that only ever adds or updates, never reconciles against the current source set."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "tech_stack": ["vite", "react", "lovable", "spa"]
+    }
+  ]
+}

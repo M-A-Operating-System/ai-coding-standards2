@@ -47,6 +47,7 @@ CATEGORY_TO_PREFIX: dict[str, str] = {
     "data": "STD-DATA",
     "ux-design": "STD-UX",
     "documentation": "STD-DOC",
+    "seo": "STD-SEO",
 }
 
 

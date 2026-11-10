@@ -3,7 +3,7 @@
 Machine-readable standards (`scope: "project"`) for this repository, read by the
 `coder` agent during implementation and the `pr-reviewer` agent against every diff.
 One JSON file per category: `architecture`, `security`, `data`, `ux-design`,
-`testing`, `process`, `documentation`.
+`testing`, `process`, `documentation`, `seo`.
 
 ## Authoring convention
 
