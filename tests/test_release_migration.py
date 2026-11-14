@@ -19,6 +19,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).parent.parent
 _RELEASE_YML = _REPO_ROOT / ".github" / "workflows" / "release.yml"
+_RELEASE_PATCH_TAG_YML = _REPO_ROOT / ".github" / "workflows" / "release-patch-tag.yml"
 _PIPELINE_JSON = _REPO_ROOT / "pipeline" / "pipeline.json"
 _MIGRATION_DOC = _REPO_ROOT / "docs" / "product" / "orchestrator" / "release-migration.md"
 
@@ -27,6 +28,15 @@ def test_release_yml_removed():
     """release.yml (and its triggers) is retired, not merely narrowed (issue #695)."""
     assert not _RELEASE_YML.exists(), (
         "release.yml should have been deleted in issue #695's workflow-removal cutover."
+    )
+
+
+def test_release_patch_tag_yml_removed():
+    """release-patch-tag.yml is retired now that 05_continuous/pr/patch-tag
+    (issue #694) owns PATCH tagging."""
+    assert not _RELEASE_PATCH_TAG_YML.exists(), (
+        "release-patch-tag.yml should have been deleted in issue #695's "
+        "workflow-removal cutover."
     )
 
 
