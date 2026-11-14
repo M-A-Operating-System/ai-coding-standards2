@@ -34,3 +34,13 @@
 **Given** an issue exists with `sizer:requested` applied and no commits beyond the placeholder exist on its code branch and no open or merged code PR exists
 **When** the sizer agent runs for that issue
 **Then** the sizer proceeds with normal pass-through sizing or decomposition exactly as it does today
+
+## Scenario: Sizer folds documentation-only candidate sub-issue into its implementing sibling
+**Given** the sizer has identified candidate sub-issues for an epic, one of which covers only documentation, design-doc, or standards-amendment changes for work that a sibling candidate sub-issue would implement as code
+**When** the sizer applies its Step 4a decomposition validity checks
+**Then** the documentation-only candidate is not emitted as a standalone sub-issue and its documentation scope is merged into the description of the implementing sibling sub-issue
+
+## Scenario: Sizer permits decomposition of a standalone documentation epic with no code siblings
+**Given** the sizer is evaluating an epic whose entire candidate scope covers only documentation, design-doc, or standards-amendment changes with no sibling sub-issue implementing any associated code
+**When** the sizer applies its Step 4a decomposition validity checks
+**Then** the documentation-only sub-issues are treated as valid decomposition units and may be created normally
