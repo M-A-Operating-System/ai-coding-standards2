@@ -594,14 +594,7 @@ Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`:
   its own (see Step 4a #1), merge the chain into fewer, larger sub-issues
   — or pass the issue through unsplit — instead of creating it.
 - **A documentation/design/standards-only sub-issue is not a valid scope
-  when a sibling implements the described work (see Step 4a #6).** Every
-  sub-issue already runs its own `prd-writer` -> `prd-docs-updater` design
-  phase before any code lands, producing its own doc and design artifacts
-  automatically. A sub-issue whose sole scope is documentation, design-doc,
-  or standards amendment for work a sibling sub-issue implements as code adds
-  no independent deliverable value -- fold its content into the implementing
-  sibling instead. A documentation-only epic with no code siblings remains a
-  valid decomposition target and is unaffected by this rule.
+  when a sibling implements the described work** -- see Step 4a #6.
 - **Do not close the parent issue.** It becomes a live tracking epic
   that provides context for all sub-issues.
 - **Spike issues pass through unconditionally.** A spike produces
