@@ -305,7 +305,7 @@ Determines the previous published release boundary and discovers merged PRs and 
 - **Applies to:** kind `None`
 - **Naming:** --
 
-Per-PR PATCH tag flow (issue #694). Fires when a PR is merged to main via the orchestrator's pull_request.closed (merged) signal. Runs scripts/push-patch-tag.sh to bump the PATCH version and push a vX.Y.Z annotated tag. The existing release-patch-tag.yml stays in place as a temporary double-guard until the new step is verified on a real merge (see sub-issue #2/2). The idempotency guard in both paths prevents double-tagging.
+Per-PR PATCH tag flow (issue #694). Fires when a PR is merged to main via the orchestrator's pull_request.closed (merged) signal. Runs scripts/push-patch-tag.sh to bump the PATCH version and push a vX.Y.Z annotated tag. The legacy release-patch-tag.yml GitHub Actions workflow was removed once this step was verified on a real merge (issue #695); this is now the sole PATCH-tagging mechanism.
 
 ### `05_continuous/pr/patch-tag`
 

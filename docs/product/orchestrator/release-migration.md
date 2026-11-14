@@ -25,9 +25,10 @@ removed so it no longer independently publishes releases.
    against.
 3. The `weekly-release` flow added to `pipeline/pipeline.json` with a
    Wednesday cron trigger and `scripts/run-release-flow.sh` as the script step.
-4. The `schedule` trigger removed from `.github/workflows/release.yml`. The
-   workflow still fires on `push: tags: v*` for off-cycle releases and on
-   `workflow_dispatch` for emergency manual releases.
+4. `.github/workflows/release.yml` removed entirely (issue #695), once the
+   orchestrator's `weekly-release` flow was verified in production. Its
+   off-cycle `push: tags: v*` and emergency `workflow_dispatch` paths were
+   retired along with it, not retained.
 
 ## Triggers after cutover
 
@@ -35,8 +36,7 @@ removed so it no longer independently publishes releases.
 |---|---|---|
 | Weekly Wednesday release | Orchestrator (`weekly-release` flow) | Wednesday, approx. 09:00 Eastern via the pipeline's twice-daily sweep |
 | PR merge to `main` (PATCH bump) | Orchestrator (`05_continuous/pr/patch-tag` step) | Immediately on `pull_request.closed` with `merged: true`; `scripts/push-patch-tag.sh` bumps the PATCH version; skipped if HEAD is already tagged |
-| Off-cycle tag push (`v*`) | `RELEASE - publish` workflow | Human pushes an explicit vX.Y.Z tag |
-| Emergency manual release | `RELEASE - publish` workflow (`workflow_dispatch`) | Human dispatches via GitHub Actions UI |
+| Off-cycle or emergency release | None | `RELEASE - publish` workflow removed (issue #695); the orchestrator's `weekly-release` flow is the sole remaining path |
 
 ## Manual dispatch and retry
 
@@ -58,17 +58,18 @@ without creating a duplicate release.
 
 ## Rollback plan
 
-To revert production release ownership back to the GitHub Actions workflow:
+To revert production release ownership back to a GitHub Actions workflow:
 
-1. Re-add the `schedule` trigger to `.github/workflows/release.yml`:
+1. Restore `.github/workflows/release.yml` from the commit that removed it
+   (issue #695), with its `schedule` trigger re-added:
    ```yaml
    schedule:
      - cron: '0 9 * * 3'  # 09:00 UTC on Wednesdays
    ```
 2. Remove or disable the `weekly-release` flow from `pipeline/pipeline.json`
    by deleting its entry from the `flows` object.
-3. Open and merge the change. The `RELEASE - publish` workflow resumes the
-   Wednesday cadence on the next tick.
+3. Open and merge the change. The restored workflow resumes the Wednesday
+   cadence on the next tick.
 
 No data migration is needed: both paths read the latest published GitHub
 Release to determine the window start, so switchover and rollback are
