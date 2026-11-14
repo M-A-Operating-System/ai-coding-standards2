@@ -8842,11 +8842,13 @@ def _wake(args) -> "Optional[RunContext]":
             log.info("No stop marker was set.")
         return None
 
-    # Handle pull_request.closed (merged only): delete the branch and exit
-    # without processing any pipeline work. Runs before pause/stop checks so
-    # merged-PR branches are cleaned up even when the pipeline is paused or
-    # stopped. PRs closed without merging are left alone -- the branch may
-    # still hold work the human wants to resume or recover.
+    # Handle pull_request.closed (merged only): delete the branch and, when
+    # the merge target is main, run the pr_merge pipeline flows.
+    # Branch cleanup runs before pause/stop checks so merged-PR branches are
+    # always cleaned up even when the pipeline is paused or stopped.
+    # PR-merge flows fall through to the pause/stop checks below.
+    # PRs closed without merging are ignored -- the branch may still hold work.
+    _is_pr_merge_to_main = False
     if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
         _action = _read_pr_event_action()
         if _action == "closed" and _read_pr_event_merged():
@@ -8856,7 +8858,9 @@ def _wake(args) -> "Optional[RunContext]":
                 "pull_request.closed (merged): cleaning up branch '%s' from %s", _branch, _repo
             )
             _call_delete_branch(_repo, _branch)
-            return None
+            _is_pr_merge_to_main = os.environ.get("GITHUB_BASE_REF", "") == "main"
+            if not _is_pr_merge_to_main:
+                return None
 
     # If a previous run hit an Anthropic rate limit and wrote the pause
     # marker, exit early. The scheduled tick will retry once the marker
@@ -9101,6 +9105,18 @@ def _wake(args) -> "Optional[RunContext]":
             sorted(conc.claimed), conc.claims_everything,
         )
 
+    if _is_pr_merge_to_main:
+        _pr_ctx = RunContext(
+            gh=gh, agents=agents, pipeline_map=pipeline_map, work_items=[],
+            concurrency=conc, repo=args.repo, session_id=session_id,
+            dry_run=args.dry_run, default_extra_tools=default_extra_tools,
+            interactive_result=args.interactive_result,
+            manual_override=args.manual_override,
+            scoped_to_item=False,
+        )
+        _run_pr_merge_flows(_pr_ctx)
+        return None
+
     return RunContext(
         gh=gh, agents=agents, pipeline_map=pipeline_map, work_items=work_items,
         concurrency=conc, repo=args.repo, session_id=session_id,
@@ -9112,6 +9128,7 @@ def _wake(args) -> "Optional[RunContext]":
 
 
 SCHEDULE_WORK_ITEM_KIND = "schedule"
+PR_MERGE_WORK_ITEM_KIND = "pr_merge"
 
 
 def _scheduled_flows(agents: list) -> dict:
@@ -9235,6 +9252,48 @@ def _run_scheduled_flows(ctx: "RunContext") -> int:
                 ran += 1
         finally:
             release_schedule(ctx.gh, ctx.repo, flow)
+    return ran
+
+
+def _pr_merge_flows(agents: list) -> dict:
+    """Event-triggered (pull_request.closed) flows, as {flow name: [steps]}."""
+    flows: dict = {}
+    for agent_def in agents:
+        if not agent_def.flow_event:
+            continue
+        steps = flows.setdefault(agent_def.flow, [])
+        steps.append(agent_def)
+    return flows
+
+
+def _pr_merge_work_item(flow: str) -> WorkItem:
+    """Stand-in work item for a PR-merge-triggered flow step.
+
+    Has no actionable number and its kind is neither issue nor pr, so no
+    ISSUE_NUMBER/PR_NUMBER is exported and no branch is resolved.
+    """
+    return WorkItem(
+        number=0, kind=PR_MERGE_WORK_ITEM_KIND,
+        title=f"pr_merge flow: {flow}", labels=set(), url="",
+    )
+
+
+def _run_pr_merge_flows(ctx: "RunContext") -> int:
+    """Run every pull_request.closed event-triggered flow.
+
+    No due-ness check and no schedule claim are needed: each PR merge is a
+    discrete event. Script-level idempotency guards (e.g. push-patch-tag.sh)
+    prevent double-work if the event fires more than once.
+    """
+    flows = _pr_merge_flows(ctx.agents)
+    if not flows:
+        return 0
+    ran = 0
+    for flow, steps in flows.items():
+        work_item = _pr_merge_work_item(flow)
+        for agent_def in steps:
+            _run_scheduled_step(ctx, agent_def, work_item)
+            ran += 1
     return ran
 
 
