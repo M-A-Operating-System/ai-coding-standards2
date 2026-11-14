@@ -54,13 +54,13 @@ Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `description` | string | yes | What kind of work this is and why it is its own flow. |
-| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
+| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work; a schedule for work with no triggering item; or a GitHub event for work fired by a repository event such as a PR merging to main. Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
 | `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit. |
 | `steps` | array of object | yes | This flow's steps, in execution order. |
 
 ### A flow -- `trigger`
 
-What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
+What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work; a schedule for work with no triggering item; or a GitHub event for work fired by a repository event such as a PR merging to main. Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
 
 Exactly one of the following shapes:
 
@@ -78,6 +78,12 @@ Exactly one of the following shapes:
 |---|---|---|---|
 | `schedule` | string | yes | Cron expression. This flow has no triggering work item; it fires on cadence and, if it concludes something is needed, raises one (PRODUCT.md, 'Scheduled work'). Due-ness is derived from the record (when this flow's steps last appended an entry), never stored separately. |
 
+**Shape 3:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `event` | string | yes | GitHub event that fires this flow. This flow has no triggering work item; it fires when the specified event occurs and targets the main branch. The orchestrator dispatches the flow's steps via _run_pr_merge_flows on a merged pull request. One of: `pull_request.closed`. |
+
 ### A flow -- `naming`
 
 What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit.
@@ -92,7 +98,7 @@ What this flow's branches and pull requests are called. Declared here, never com
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `agent` | string | yes | Stable step name in the form {phase}/{short-name}. For an agent-type step this matches the prompt at .claude/agents/{phase}/{short-name}.md and its frontmatter name field. Unaffected by which flow the step lives in -- phase governs where the prompt file sorts, not what work the step is for. |
+| `agent` | string | yes | Stable step name in the form {phase}/{short-name} or {phase}/{subdir}/{short-name}. For an agent-type step this matches the prompt at .claude/agents/{phase}/{short-name}.md and its frontmatter name field. Unaffected by which flow the step lives in -- phase governs where the prompt file sorts, not what work the step is for. |
 | `phase` | string | yes | Must equal the agent field's phase prefix. One of: `00_ondemand`, `01_product_docs`, `02_design`, `03_execute`, `04_evaluate`, `05_continuous`. |
 | `trigger` | object | yes | What makes this step eligible, within a flow its item has already entered. Sequencing (label) and, for a step in a coordinating or self-continuing flow, a condition about the item's own children (PRODUCT.md, 'Coordinating work needs a trigger that can look outward' and 'The same capability lets a step finish its own work in pieces'). |
 | `unit` | string | no | What one invocation of this step addresses. 'item' (default): the work item itself. 'sub_item': one of the item's open children -- the orchestrator selects one and tells the step which via SUB_ITEM_NUMBER. Pairs with trigger.children: any_open: the step stays eligible, one sub-issue per invocation, so a step that exhausts mid-item has already committed the pieces it finished (PRODUCT.md, 'The unit of work shrinks; the contract does not change'). Default: `item`. One of: `item`, `sub_item`. |

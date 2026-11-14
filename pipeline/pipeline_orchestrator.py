@@ -250,6 +250,7 @@ class AgentDef:
     flow_classifications: list = field(default_factory=list)  # flow trigger.classification -- item must carry one of these classification: labels; [] means every classification
     flow_schedule: Optional[str] = None   # flow trigger.schedule (cron) -- this flow has no work item; it fires on cadence
     flow_schedule_timezone: str = ""      # resolved timezone for schedule matching (empty until load_pipeline resolves it)
+    flow_event: Optional[str] = None      # flow trigger.event -- this flow has no work item; fires on this GitHub event (e.g. "pull_request.closed")
     commits_to: Optional[str] = None      # git_ops.commits_to -- which of the flow's naming.pull_requests entries this step commits to
     unit: str = "item"                    # "item" | "sub_item" -- what one invocation of this step addresses
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
@@ -600,6 +601,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 flow_classifications=list(flow_trigger.get("classification") or []),
                 flow_schedule=flow_trigger.get("schedule"),
                 flow_schedule_timezone=flow_trigger.get("timezone", ""),
+                flow_event=flow_trigger.get("event") or None,
                 commits_to=_commits_to,
                 unit=entry.get("unit", "item"),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
@@ -5449,6 +5451,15 @@ def _should_run(
         log.info(
             "  skip %-40s  [schedule-triggered; pass --manual-override to apply interactively]",
             agent_def.agent,
+        )
+        return False
+
+    # An event-triggered flow (e.g. pull_request.closed) has no work item;
+    # its steps are dispatched by _run_pr_merge_flows, never by this loop.
+    if agent_def.flow_event and not manual_override:
+        log.info(
+            "  skip %-40s  [event-triggered (%s); dispatched by _run_pr_merge_flows]",
+            agent_def.agent, agent_def.flow_event,
         )
         return False
 
