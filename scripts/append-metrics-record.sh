@@ -56,6 +56,16 @@ fi
 # shellcheck source=lib/github-identity.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
 
+# Author/committer identity for `git commit-tree` below -- without this, a
+# runner with no global git config set fails every append with "Author
+# identity unknown" (git commit-tree, unlike git push, has no credential
+# helper to fall back on). Same identity create-pr.sh already uses for its
+# own commits, so every system write is attributed consistently (MI-7).
+export GIT_AUTHOR_NAME="github-actions[bot]"
+export GIT_AUTHOR_EMAIL="github-actions[bot]@users.noreply.github.com"
+export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
+export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
+
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     # base64 -w 0 (GNU) suppresses line-wrapping; macOS base64 has no -w flag.
     _ENCODED=$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" \
