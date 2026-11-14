@@ -68,7 +68,13 @@ echo "push-patch-tag: HEAD SHA: $HEAD_SHA" >&2
 
 TAGS_JSON=""
 if ! TAGS_JSON="$(gh api --paginate --slurp "repos/$REPO/tags" 2>/dev/null)"; then
-    TAGS_JSON="[[]]"
+    # Fail loudly rather than substituting an empty tag list: that would
+    # skip the idempotency guard (treating an already-tagged HEAD as
+    # untagged) and compute the wrong PATCH version from a false "no tags
+    # exist" baseline.
+    echo "push-patch-tag: ERROR: could not list tags for $REPO" >&2
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
 fi
 
 # ---------------------------------------------------------------------------

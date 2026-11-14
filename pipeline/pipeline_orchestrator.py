@@ -9177,7 +9177,8 @@ def _run_scheduled_step(ctx: "RunContext", agent_def: AgentDef, work_item: WorkI
     """
     _timestamp_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     _flow_env = _flow_context_env(agent_def, work_item)
-    log.info("  TRIGGER %-38s  [scheduled: %s]", agent_def.agent, agent_def.flow)
+    _trigger_kind = "pr_merge" if work_item.kind == PR_MERGE_WORK_ITEM_KIND else "scheduled"
+    log.info("  TRIGGER %-38s  [%s: %s]", agent_def.agent, _trigger_kind, agent_def.flow)
 
     step_result: Optional[StepResult] = None
     if agent_def.step_type == "script":
