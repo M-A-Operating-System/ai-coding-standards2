@@ -4,17 +4,17 @@ Covers:
 - Scenario R2: Production release ownership transferred to orchestrator after
   parity confirmed -- the weekly-release flow in pipeline.json owns the
   scheduled release, not release.yml.
-- Scenario R3: Existing Wednesday workflow no longer independently publishes
-  releases -- release.yml no longer carries a schedule trigger.
 - Scenario R4: Migration documentation is present and accessible.
-- Scenario R5: Manual dispatch and retry continue to function -- release.yml
-  retains workflow_dispatch and push:tags:v* triggers.
+
+release.yml itself was removed in issue #695 -- its manual-dispatch and
+off-cycle tag-push triggers (R3/R5) were retired along with the file, not
+retained, so the scenarios that once asserted on its 'on:' block no longer
+apply.
 """
 
 import re
 from pathlib import Path
 
-import yaml
 import pytest
 
 _REPO_ROOT = Path(__file__).parent.parent
@@ -23,45 +23,11 @@ _PIPELINE_JSON = _REPO_ROOT / "pipeline" / "pipeline.json"
 _MIGRATION_DOC = _REPO_ROOT / "docs" / "product" / "orchestrator" / "release-migration.md"
 
 
-# ---------------------------------------------------------------------------
-# Scenario R3: existing Wednesday workflow no longer independently publishes
-# ---------------------------------------------------------------------------
-
-def _release_yml_on():
-    """Return the 'on:' block from release.yml.
-
-    PyYAML parses 'on:' as the boolean key True (YAML 1.1 quirk), so we
-    look for both True and the string 'on'.
-    """
-    with open(_RELEASE_YML) as f:
-        doc = yaml.safe_load(f)
-    return doc.get(True) or doc.get("on") or {}
-
-
-class TestReleaseYmlRetired:
-    def test_schedule_trigger_removed(self):
-        """Scenario R3: release.yml must not have a schedule trigger."""
-        on = _release_yml_on()
-        assert "schedule" not in on, (
-            "release.yml still carries a schedule trigger; it must be removed "
-            "after cutover to the orchestrator-owned weekly-release flow."
-        )
-
-    def test_workflow_dispatch_retained(self):
-        """Scenario R5: emergency manual dispatch must still be available."""
-        on = _release_yml_on()
-        assert "workflow_dispatch" in on, (
-            "release.yml must retain workflow_dispatch for emergency manual releases."
-        )
-
-    def test_push_tags_trigger_retained(self):
-        """Scenario R5: off-cycle tag-push releases must still work."""
-        on = _release_yml_on()
-        push = on.get("push") or {}
-        tags = push.get("tags") or []
-        assert any("v*" in t for t in tags), (
-            "release.yml must retain push:tags:v* for off-cycle releases."
-        )
+def test_release_yml_removed():
+    """release.yml (and its triggers) is retired, not merely narrowed (issue #695)."""
+    assert not _RELEASE_YML.exists(), (
+        "release.yml should have been deleted in issue #695's workflow-removal cutover."
+    )
 
 
 # ---------------------------------------------------------------------------
