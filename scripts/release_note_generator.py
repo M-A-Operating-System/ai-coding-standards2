@@ -54,7 +54,7 @@ _CATEGORY_MAP = {
     'classification: tech-debt':   'Maintenance',
 }
 
-CATEGORY_ORDER = ['Security', 'Features', 'Fixes', 'Maintenance', 'Other']
+CATEGORY_ORDER = ['Security', 'HOTFIX', 'Features', 'Fixes', 'Maintenance', 'Other']
 
 
 # ---------------------------------------------------------------------------
@@ -188,11 +188,13 @@ def collate(client, repo, start, end):
     # Map issue_number -> list of PR dicts (same-repo only, deduplicated)
     issue_to_prs = {}
     cross_repo_refs = []
+    linked_pr_numbers = set()
 
     for pr in prs:
         body = pr.get('body') or ''
         refs = parse_closing_refs(body, repo)
         for ref_repo, issue_num in refs:
+            linked_pr_numbers.add(pr['number'])
             if ref_repo != repo:
                 cross_repo_refs.append({
                     'pr': pr['number'],
@@ -274,8 +276,32 @@ def collate(client, repo, start, end):
             'reopened': reopened,
         })
 
+    for pr in prs:
+        if pr['number'] in linked_pr_numbers:
+            continue
+        pr_labels = {lbl['name'] for lbl in pr.get('labels', [])}
+        excluded_present = EXCLUDED_LABELS & pr_labels
+        if excluded_present:
+            diagnostics['excluded'].append({
+                'pr': pr['number'],
+                'url': pr.get('html_url', ''),
+                'reason': f'label: {", ".join(sorted(excluded_present))}',
+            })
+            continue
+        entries.append({
+            'issue_number': None,
+            'issue_title': None,
+            'issue_url': None,
+            'category': 'HOTFIX',
+            'release_notes': None,
+            'pr_title': pr.get('title', ''),
+            'pr_url': pr.get('html_url', ''),
+            'pr_numbers': [pr['number']],
+            'reopened': False,
+        })
+
     diagnostics['prs_covered'] = sorted(
-        {pr for entry in entries for pr in entry['pr_numbers']}
+        {pr_num for entry in entries for pr_num in entry['pr_numbers']}
     )
     return entries, diagnostics, len(prs)
 
@@ -303,15 +329,25 @@ def render_markdown(entries, start, end, repo):
     ]
 
     for cat in CATEGORY_ORDER:
-        cat_entries = sorted(by_category[cat], key=lambda e: e['issue_number'])
+        if cat == 'HOTFIX':
+            cat_entries = sorted(by_category[cat], key=lambda e: e['pr_numbers'][0])
+        else:
+            cat_entries = sorted(by_category[cat], key=lambda e: e['issue_number'])
         if not cat_entries:
             continue
         lines.append(f'## {cat}')
         lines.append('')
         for entry in cat_entries:
             prose = entry['release_notes'] if entry['release_notes'] is not None else entry['pr_title']
-            suffix = ' *(reopened)*' if entry['reopened'] else ''
-            lines.append(f'### [{entry["issue_title"]}]({entry["issue_url"]}){suffix}')
+            if entry['category'] == 'HOTFIX':
+                link_title = entry['pr_title']
+                link_url = entry.get('pr_url', '')
+                suffix = ''
+            else:
+                link_title = entry['issue_title']
+                link_url = entry['issue_url']
+                suffix = ' *(reopened)*' if entry['reopened'] else ''
+            lines.append(f'### [{link_title}]({link_url}){suffix}')
             lines.append('')
             lines.append(prose)
             lines.append('')
