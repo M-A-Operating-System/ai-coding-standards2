@@ -21,6 +21,7 @@ MERGE_PR = REPO_ROOT / "scripts" / "merge-pr.sh"
 #                                               and the state read hit this).
 #   api --method PUT   .../pulls/<N>/merge   -> logs the call, exit $MERGE_RC
 #   api --method DELETE .../git/refs/heads/B -> logs the call, exit $DELETE_RC
+#   api --method PATCH .../issues/<N>        -> logs the call, exit $CLOSE_RC
 MOCK_GH = r"""#!/usr/bin/env bash
 cmd="$1"; shift || true
 if [ "$cmd" = "api" ]; then
@@ -28,6 +29,8 @@ if [ "$cmd" = "api" ]; then
   case "$allargs" in
     *"--method PUT"*"/merge"*)
       echo "MOCK-MERGE-PUT: $allargs"; exit "${MERGE_RC:-0}" ;;
+    *"--method PATCH"*"/issues/"*)
+      echo "MOCK-CLOSE-ISSUE: $allargs"; exit "${CLOSE_RC:-0}" ;;
     *"--method DELETE"*)
       echo "MOCK-DELETE-REF: $allargs"; exit "${DELETE_RC:-0}" ;;
     *"git/refs/heads/"*)
@@ -53,7 +56,7 @@ exit 99
 
 
 def _run_split(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
-               merge_rc=0, delete_rc=0, branch_ref_rc=0):
+               merge_rc=0, delete_rc=0, branch_ref_rc=0, close_rc=0):
     """Returns (stdout, stderr, rc) for stream-sensitive assertions."""
     mock_dir = tmp_path / "bin"
     mock_dir.mkdir()
@@ -70,6 +73,7 @@ def _run_split(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
         "MERGE_RC": str(merge_rc),
         "DELETE_RC": str(delete_rc),
         "BRANCH_REF_RC": str(branch_ref_rc),
+        "CLOSE_RC": str(close_rc),
     }
     result = subprocess.run(
         ["bash", str(MERGE_PR), *args],
@@ -79,22 +83,49 @@ def _run_split(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
 
 
 def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
-         merge_rc=0, delete_rc=0, branch_ref_rc=0):
+         merge_rc=0, delete_rc=0, branch_ref_rc=0, close_rc=0):
     stdout, stderr, rc = _run_split(tmp_path, args, pr_exists=pr_exists,
                                     state_json=state_json, issue_pr=issue_pr,
                                     merge_rc=merge_rc, delete_rc=delete_rc,
-                                    branch_ref_rc=branch_ref_rc)
+                                    branch_ref_rc=branch_ref_rc, close_rc=close_rc)
     return stdout + stderr, rc
 
 
 # REST pull objects (as `gh api repos/O/R/pulls/N` returns). state is lowercase;
 # mergeable_state is "clean"/"dirty"/...; cross-repo is derived by comparing
 # head.repo.full_name against base.repo.full_name.
-_SAME_REPO = '"head":{"ref":"issue-5","repo":{"full_name":"owner/repo"}},"base":{"repo":{"full_name":"owner/repo"}},"draft":false'
+_SAME_REPO = '"head":{"ref":"issue-5","repo":{"full_name":"owner/repo"}},"base":{"ref":"main","repo":{"full_name":"owner/repo","default_branch":"main"}},"draft":false'
 _OPEN = '{"state":"open","merged":false,"mergeable_state":"clean",' + _SAME_REPO + '}'
 _MERGED = '{"state":"closed","merged":true,"mergeable_state":"unknown",' + _SAME_REPO + '}'
 _CONFLICT = '{"state":"open","merged":false,"mergeable_state":"dirty",' + _SAME_REPO + '}'
 _CLOSED = '{"state":"closed","merged":false,"mergeable_state":"unknown",' + _SAME_REPO + '}'
+
+# A PR that merges into a parent epic's shared integration branch (not the
+# repo's default branch) and whose body declares it closes a sub-issue --
+# the scenario where GitHub's own "Closes #N" keyword never fires (issue
+# #734's #761/#762).
+_INTEGRATION_BRANCH_SAME_REPO = (
+    '"head":{"ref":"issue-761","repo":{"full_name":"owner/repo"}},'
+    '"base":{"ref":"issue-734","repo":{"full_name":"owner/repo","default_branch":"main"}},'
+    '"draft":false,"body":"Closes #761"'
+)
+_OPEN_INTO_INTEGRATION_BRANCH = (
+    '{"state":"open","merged":false,"mergeable_state":"clean",' + _INTEGRATION_BRANCH_SAME_REPO + '}'
+)
+_MERGED_INTO_INTEGRATION_BRANCH = (
+    '{"state":"closed","merged":true,"mergeable_state":"unknown",' + _INTEGRATION_BRANCH_SAME_REPO + '}'
+)
+
+# The same shape, but merging into the default branch directly -- GitHub's
+# own keyword already covers this, so no explicit close should be issued.
+_DEFAULT_BRANCH_WITH_CLOSES_BODY = (
+    '"head":{"ref":"issue-5","repo":{"full_name":"owner/repo"}},'
+    '"base":{"ref":"main","repo":{"full_name":"owner/repo","default_branch":"main"}},'
+    '"draft":false,"body":"Closes #5"'
+)
+_OPEN_INTO_DEFAULT_WITH_CLOSES = (
+    '{"state":"open","merged":false,"mergeable_state":"clean",' + _DEFAULT_BRANCH_WITH_CLOSES_BODY + '}'
+)
 
 
 class TestMergePr:
@@ -205,3 +236,48 @@ class TestMergePr:
         assert rc == 1, stdout + stderr
         assert "could not be merged" in stderr
         assert "Merged PR #5" not in stdout
+
+
+class TestExplicitCloseForNonDefaultBaseMerge:
+    """A PR's 'Closes #N' keyword only auto-fires on a merge to the
+    repository's default branch (issue #734's #761/#762): a merge into any
+    other branch -- e.g. a decomposed parent epic's shared integration
+    branch -- must explicitly close the referenced issue itself, since
+    GitHub never will.
+    """
+
+    def test_merge_into_non_default_branch_explicitly_closes_referenced_issue(self, tmp_path):
+        out, rc = _run(
+            tmp_path, ["761"], pr_exists=0, state_json=_OPEN_INTO_INTEGRATION_BRANCH,
+        )
+        assert rc == 0, out
+        assert "Closed #761 explicitly" in out
+
+    def test_merge_into_default_branch_does_not_explicitly_close(self, tmp_path):
+        # GitHub's own keyword already covers a merge straight to main --
+        # an explicit close here would be redundant (and double-announce).
+        out, rc = _run(
+            tmp_path, ["5"], pr_exists=0, state_json=_OPEN_INTO_DEFAULT_WITH_CLOSES,
+        )
+        assert rc == 0, out
+        assert "MOCK-CLOSE-ISSUE" not in out
+        assert "Closed #5 explicitly" not in out
+
+    def test_already_merged_into_non_default_branch_still_closes_issue(self, tmp_path):
+        # Idempotent re-run: the PR was already merged on a prior tick, but
+        # the explicit close must still happen if it hasn't already (or be a
+        # harmless no-op on the GitHub side if it has).
+        out, rc = _run(
+            tmp_path, ["761"], pr_exists=0, state_json=_MERGED_INTO_INTEGRATION_BRANCH,
+        )
+        assert rc == 0, out
+        assert "Closed #761 explicitly" in out
+
+    def test_close_failure_warns_but_does_not_fail_the_script(self, tmp_path):
+        out, rc = _run(
+            tmp_path, ["761"], pr_exists=0, state_json=_OPEN_INTO_INTEGRATION_BRANCH,
+            close_rc=1,
+        )
+        assert rc == 0, out
+        assert "WARNING: could not close #761" in out
+        assert "Merged PR #761" in out
