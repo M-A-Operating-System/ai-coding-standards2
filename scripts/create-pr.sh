@@ -129,6 +129,24 @@ if [[ "${PR_CLOSES_ISSUE}" == "false" ]]; then
   PR_BODY="Design documentation for issue #${ISSUE_NUMBER} (branch ${BRANCH}). Merges to main at the prd-docs-updater:approved gate, ahead of the build phase; does not close the issue -- the code PR does."
 else
   PR_BODY="Closes #${ISSUE_NUMBER}"
+  # If the sizer (00_ondemand/sizer, Step 4b) decomposed this issue into
+  # sub-issues, each carries a parent-issue:${ISSUE_NUMBER} label. Those
+  # sub-issues' own code PRs merge into THIS issue's shared integration
+  # branch (naming.base "issue-{parent_number}"), not the repository's
+  # default branch -- so a "Closes #N" in one of them never auto-closes it
+  # (GitHub only honours that keyword on a merge to the default branch).
+  # This PR is the one that *does* merge to the default branch, so it must
+  # carry a Closes trailer for every sub-issue too, or they are left open
+  # forever even after the parent epic they belong to has closed.
+  SUB_ISSUES=$(
+    gh api "repos/${REPO}/issues?labels=parent-issue%3A${ISSUE_NUMBER}&state=all&per_page=100" \
+      --paginate --jq '.[] | select(has("pull_request") | not) | .number' \
+      2>/dev/null || true
+  )
+  for SUB in ${SUB_ISSUES}; do
+    PR_BODY="${PR_BODY}
+Closes #${SUB}"
+  done
 fi
 
 # Idempotency: check for an existing open PR on this branch.
