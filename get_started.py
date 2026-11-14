@@ -93,6 +93,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -321,6 +322,35 @@ def install_adrs(
     )
     print(f"  Project ADRs: -> {dst}")
     return write_file(dst, project_adrs, force=False, dry_run=dry_run)
+
+
+def install_default_pipeline_stop(
+    consuming_root: Path,
+    dry_run: bool,
+) -> bool:
+    """Seed a default `.pipeline-stop` marker at level 2 for a new repo.
+
+    A newly onboarded repo starts with agent work paused (coder, pr-reviewer,
+    prd-writer, sizer, etc. -- every stopOnLevel<=2 step) while maintenance
+    and metrics flows (stopOnLevel: 3) still run, until a human clears it or
+    raises/lowers the level deliberately. Seeded once and never overwritten,
+    so an operator's own stop-level decision survives every later sync --
+    including a later --full --force run.
+    """
+    dst = consuming_root / ".pipeline-stop"
+    if dst.exists():
+        print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
+        return False
+    marker = (
+        '{\n'
+        f'  "stopped_at": "{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}",\n'
+        '  "reason": "Default onboarding stop -- agent work paused until a human reviews and clears or re-levels this marker.",\n'
+        '  "stopped_by": "get_started.py",\n'
+        '  "level": 2\n'
+        '}\n'
+    )
+    print(f"  Default pipeline stop (level 2): -> {dst}")
+    return write_file(dst, marker, force=False, dry_run=dry_run)
 
 
 def install_claude(
@@ -1278,6 +1308,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_emergency_stop_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
+    install_default_pipeline_stop(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)
     install_claude_local_md(consuming_root, dry_run)
     install_claude_md(consuming_root, force, dry_run)
