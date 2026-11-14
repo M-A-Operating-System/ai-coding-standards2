@@ -34,6 +34,7 @@ removed so it no longer independently publishes releases.
 | Trigger | Owner | When |
 |---|---|---|
 | Weekly Wednesday release | Orchestrator (`weekly-release` flow) | Wednesday, approx. 09:00 Eastern via the pipeline's twice-daily sweep |
+| PR merge to `main` (PATCH bump) | Orchestrator (`05_continuous/pr/patch-tag` step) | Immediately on `pull_request.closed` with `merged: true`; `scripts/push-patch-tag.sh` bumps the PATCH version; skipped if HEAD is already tagged |
 | Off-cycle tag push (`v*`) | `RELEASE - publish` workflow | Human pushes an explicit vX.Y.Z tag |
 | Emergency manual release | `RELEASE - publish` workflow (`workflow_dispatch`) | Human dispatches via GitHub Actions UI |
 

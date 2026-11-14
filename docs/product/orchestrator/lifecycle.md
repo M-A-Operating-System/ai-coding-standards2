@@ -75,6 +75,7 @@ satisfied. Phase 5 does not block any per-ticket flow.
 | `05_continuous/debt-finder` | 5 | agent | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn |
 | `05_continuous/adr-revisitor` | 5 | agent | Monthly: flags accepted ADRs whose context has materially shifted |
 | `05_continuous/debt-curator` | 5 | agent | Weekly: de-duplicates and prioritises debt candidates into one report |
+| `05_continuous/pr/patch-tag` | 5 | script | PR-merge: bumps the PATCH version and pushes a tag when a PR merges to `main`; skipped at `stopOnLevel` 3 |
 
 Clearing a satisfied `blockedby:`/`blocks:` pair once the blocking issue
 closes is not a separate scheduled agent -- the pipeline runs no scheduled
