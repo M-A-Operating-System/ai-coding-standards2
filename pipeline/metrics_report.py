@@ -100,6 +100,7 @@ _LINE = "line"
 _BAR_AGENT = "bar_agent"
 _BAR_AGENT_STACKED = "bar_agent_stacked"
 
+
 # Priority-ordered metric definitions: (field_name, title, ylabel, chart_type,
 # description). field_name is a plain string for _LINE/_BAR_AGENT entries, or
 # a (field_in, field_out) tuple for a _BAR_AGENT_STACKED entry (two series
@@ -197,6 +198,7 @@ def _resolve_repo_name() -> str:
         return name or "unknown repository"
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown repository"
+
 
 # Fields present in every aggregate record that are not plottable metrics.
 _NON_METRIC_FIELDS = frozenset({
