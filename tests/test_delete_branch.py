@@ -245,6 +245,7 @@ class TestWakePullRequestClosed:
         env_patch = {
             "GITHUB_EVENT_NAME": "pull_request",
             "GITHUB_HEAD_REF": "issue-42",
+            "GITHUB_BASE_REF": "issue-41",
             "GITHUB_EVENT_PATH": str(event_file),
         }
         with patch.dict(os.environ, env_patch):
@@ -263,6 +264,7 @@ class TestWakePullRequestClosed:
         env_patch = {
             "GITHUB_EVENT_NAME": "pull_request",
             "GITHUB_HEAD_REF": "issue-99",
+            "GITHUB_BASE_REF": "issue-98",
             "GITHUB_EVENT_PATH": str(event_file),
         }
         with patch.dict(os.environ, env_patch):
@@ -321,7 +323,7 @@ class TestWakePullRequestClosed:
         event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
         args = _minimal_wake_args()
 
-        env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_HEAD_REF",)}
+        env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_HEAD_REF", "GITHUB_BASE_REF")}
         env["GITHUB_EVENT_NAME"] = "pull_request"
         env["GITHUB_EVENT_PATH"] = str(event_file)
 
