@@ -58,6 +58,20 @@ def _dt(ts):
     return datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
 
 
+def _hotfix_entry(pr_number, pr_title, pr_url):
+    return {
+        'issue_number': None,
+        'issue_title': None,
+        'issue_url': None,
+        'category': 'HOTFIX',
+        'release_notes': None,
+        'pr_title': pr_title,
+        'pr_url': pr_url,
+        'pr_numbers': [pr_number],
+        'reopened': False,
+    }
+
+
 def _make_pr(number, merged_at=None, body='', labels=None, updated_at=None, title='PR title'):
     if updated_at is None:
         updated_at = merged_at or '2026-10-05T12:00:00Z'
@@ -555,19 +569,6 @@ class TestRenderMarkdownHotfix:
     Scenario: render_markdown renders HOTFIX entry using PR-sourced fields
     """
 
-    def _hotfix_entry(self, pr_number, pr_title, pr_url):
-        return {
-            'issue_number': None,
-            'issue_title': None,
-            'issue_url': None,
-            'category': 'HOTFIX',
-            'release_notes': None,
-            'pr_title': pr_title,
-            'pr_url': pr_url,
-            'pr_numbers': [pr_number],
-            'reopened': False,
-        }
-
     def _issue_entry(self, number, category, title, url, release_notes):
         return {
             'issue_number': number,
@@ -584,7 +585,7 @@ class TestRenderMarkdownHotfix:
         """Scenario: HOTFIX section is ordered immediately after Security"""
         entries = [
             self._issue_entry(1, 'Security', 'Sec issue', 'u1', 'sec fix'),
-            self._hotfix_entry(200, 'Hotfix PR', 'https://github.com/o/r/pull/200'),
+            _hotfix_entry(200, 'Hotfix PR', 'https://github.com/o/r/pull/200'),
         ]
         md = render_markdown(entries, _START, _END, 'owner/repo')
         sec_pos = md.index('## Security')
@@ -593,7 +594,7 @@ class TestRenderMarkdownHotfix:
 
     def test_hotfix_rendered_with_pr_title_and_url(self):
         """Scenario: render_markdown renders HOTFIX entry using PR-sourced fields"""
-        entry = self._hotfix_entry(
+        entry = _hotfix_entry(
             201, 'Emergency fix', 'https://github.com/o/r/pull/201'
         )
         md = render_markdown([entry], _START, _END, 'owner/repo')
@@ -602,7 +603,7 @@ class TestRenderMarkdownHotfix:
         assert '## HOTFIX' in md
 
     def test_hotfix_does_not_require_issue_fields(self):
-        entry = self._hotfix_entry(
+        entry = _hotfix_entry(
             202, 'Patch', 'https://github.com/o/r/pull/202'
         )
         md = render_markdown([entry], _START, _END, 'owner/repo')
@@ -610,9 +611,9 @@ class TestRenderMarkdownHotfix:
 
     def test_hotfix_entries_sorted_by_pr_number(self):
         entries = [
-            self._hotfix_entry(300, 'Third', 'u300'),
-            self._hotfix_entry(100, 'First', 'u100'),
-            self._hotfix_entry(200, 'Second', 'u200'),
+            _hotfix_entry(300, 'Third', 'u300'),
+            _hotfix_entry(100, 'First', 'u100'),
+            _hotfix_entry(200, 'Second', 'u200'),
         ]
         md = render_markdown(entries, _START, _END, 'owner/repo')
         pos100 = md.index('First')
@@ -663,19 +664,6 @@ class TestRenderMarkdown:
         md = render_markdown([entry], _START, _END, 'owner/repo')
         assert 'reopened' in md
 
-    def _hotfix_entry(self, pr_number, pr_title, pr_url):
-        return {
-            'issue_number': None,
-            'issue_title': None,
-            'issue_url': None,
-            'category': 'HOTFIX',
-            'release_notes': None,
-            'pr_title': pr_title,
-            'pr_url': pr_url,
-            'pr_numbers': [pr_number],
-            'reopened': False,
-        }
-
     def test_categories_in_correct_order(self):
         entries = [
             self._entry(1, 'Other',       'O', 'u1', 'x'),
@@ -683,7 +671,7 @@ class TestRenderMarkdown:
             self._entry(3, 'Fixes',       'F', 'u3', 'x'),
             self._entry(4, 'Features',    'E', 'u4', 'x'),
             self._entry(5, 'Security',    'S', 'u5', 'x'),
-            self._hotfix_entry(200, 'Hotfix PR', 'https://github.com/owner/repo/pull/200'),
+            _hotfix_entry(200, 'Hotfix PR', 'https://github.com/owner/repo/pull/200'),
         ]
         md = render_markdown(entries, _START, _END, 'owner/repo')
         positions = {cat: md.index(f'## {cat}') for cat in CATEGORY_ORDER
