@@ -292,6 +292,19 @@ deployable units of work. Each sub-issue must satisfy all of:
 5. **Maximum 4 acceptance criteria** — if a candidate sub-issue
    still has more than 4 ACs, split it further.
 
+6. **Not a documentation-only sub-issue when a sibling implements the work** --
+   Every sub-issue this sizer creates already runs its own design phase
+   (`prd-writer` -> `prd-docs-updater`) before any code lands, which produces
+   that sub-issue's own documentation and design updates automatically. A
+   sub-issue whose entire scope is writing or amending documentation,
+   design-doc, or standards text for work that a sibling sub-issue implements
+   as code is not an independent deliverable unit -- it duplicates a step every
+   sibling already gets for free. Fold that documentation scope into the
+   implementing sub-issue instead. This rule does not apply to a genuinely
+   standalone documentation epic where no sibling sub-issue implements any
+   associated code -- in that case, documentation-only sub-issues remain valid
+   decomposition targets.
+
 Aim for 3–6 sub-issues. Fewer than 3 suggests the original was not
 an epic. More than 6 suggests the sub-issues need further grouping.
 
@@ -580,6 +593,15 @@ Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`:
   depend on the previous one, with no independent observable effect of
   its own (see Step 4a #1), merge the chain into fewer, larger sub-issues
   — or pass the issue through unsplit — instead of creating it.
+- **A documentation/design/standards-only sub-issue is not a valid scope
+  when a sibling implements the described work (see Step 4a #6).** Every
+  sub-issue already runs its own `prd-writer` -> `prd-docs-updater` design
+  phase before any code lands, producing its own doc and design artifacts
+  automatically. A sub-issue whose sole scope is documentation, design-doc,
+  or standards amendment for work a sibling sub-issue implements as code adds
+  no independent deliverable value -- fold its content into the implementing
+  sibling instead. A documentation-only epic with no code siblings remains a
+  valid decomposition target and is unaffected by this rule.
 - **Do not close the parent issue.** It becomes a live tracking epic
   that provides context for all sub-issues.
 - **Spike issues pass through unconditionally.** A spike produces
