@@ -17,8 +17,8 @@
 # release.yml's off-cycle push:tags path to fire unintentionally.
 #
 # Idempotent: skips the tag push when the current HEAD of main is already
-# tagged with a vX.Y.Z tag. This guard prevents double-tagging during the
-# transition period when release-patch-tag.yml is still active.
+# tagged with a vX.Y.Z tag. This guard prevents double-tagging if the
+# pull_request.closed event fires more than once for the same merge.
 #
 # Outcomes (AI_AGILE_STATUS: complete | blocked):
 #   complete:  tag pushed, or skipped because HEAD was already tagged

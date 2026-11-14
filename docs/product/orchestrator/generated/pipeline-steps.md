@@ -27,7 +27,7 @@ authoritative and these tables are a view of it.
 | `metrics-aggregation-daily` | schedule `0 1 * * *` | -- |
 | `metrics-report` | schedule `0 2 * * 1` | -- |
 | `weekly-release` | schedule `0 9 * * 3` | -- |
-| `patch-tag` | kind `None` | -- |
+| `patch-tag` | event `pull_request.closed` | -- |
 
 ## Flow: `standard-delivery`
 
