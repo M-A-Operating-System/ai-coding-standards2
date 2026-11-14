@@ -73,7 +73,7 @@ runs:
           .github/workflows/ai_emergency_stop.yml \
           .github/actions
 
-        git add adrs requirements.txt .pipeline-stop 2>/dev/null || true
+        git add adrs requirements.txt 2>/dev/null || true
 
         if git diff --cached --quiet; then
           echo "OK: Already onboarded -- nothing to commit."
