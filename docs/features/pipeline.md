@@ -187,3 +187,15 @@
 **Given** `scripts/generate-metrics-report.sh` is invoked as `ai-coding-standards2/scripts/generate-metrics-report.sh` and `ai-coding-standards2/pipeline/metrics_report.py` exists while `pipeline/metrics_report.py` at the consuming repo root does not, and `AI_AGILE_ROOT` is set to the consuming repo root
 **When** the script runs
 **Then** it does not emit `AI_AGILE_STATUS: blocked` for a missing `metrics_report.py`
+
+## Scenario: Scheduled-flow claim git push succeeds in headless environment
+
+**Given** `claim_schedule()` runs with `GITHUB_TOKEN` set and `AI_AGILE_BOT_TOKEN` absent in the subprocess environment built by `_append_metrics_record()`
+**When** `append-metrics-record.sh` reaches the `git push` step for a scheduled-flow claim
+**Then** the push exits with status 0 and a `schedule.claim` record is written to the metrics repository
+
+## Scenario: append-metrics-record.sh logs the resolved identity source
+
+**Given** `append-metrics-record.sh` has sourced `scripts/lib/github-identity.sh` and `AI_AGILE_GH_IDENTITY` is set by that source
+**When** any claim or metrics-append invocation runs
+**Then** a log line naming the resolved identity source (or "unset") is written to stderr before any git operation begins
