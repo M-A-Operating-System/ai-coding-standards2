@@ -55,6 +55,7 @@ fi
 # ---------------------------------------------------------------------------
 # shellcheck source=lib/github-identity.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
+echo "append-metrics-record: identity source: ${AI_AGILE_GH_IDENTITY:-unset}" >&2
 
 # Author/committer identity for `git commit-tree` below -- without this, a
 # runner with no global git config set fails every append with "Author
