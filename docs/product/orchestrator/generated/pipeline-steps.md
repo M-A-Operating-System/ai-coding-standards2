@@ -27,6 +27,7 @@ authoritative and these tables are a view of it.
 | `metrics-aggregation-daily` | schedule `0 1 * * *` | -- |
 | `metrics-report` | schedule `0 2 * * 1` | -- |
 | `weekly-release` | schedule `0 9 * * 3` | -- |
+| `patch-tag` | event `pull_request.closed` | -- |
 
 ## Flow: `standard-delivery`
 
@@ -409,6 +410,26 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `05_continuous/weekly-release` | -- | -- | -- |
+
+## Flow: `patch-tag`
+
+### Sequence and gates
+
+| Step | Kind | Unit | Trigger | Depends on | Human gate |
+|---|---|---|---|---|---|
+| `05_continuous/pr/patch-tag` | script | `item` | event `pull_request.closed` | -- | -- |
+
+### Exclusions and retries
+
+| Step | Excluded classifications | Excluded labels | Max retries |
+|---|---|---|---|
+| `05_continuous/pr/patch-tag` | -- | -- | `1` |
+
+### Entitled activities
+
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `05_continuous/pr/patch-tag` | -- | -- | -- |
 
 ## Entitlements granted to every step
 

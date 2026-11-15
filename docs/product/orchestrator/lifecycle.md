@@ -75,6 +75,7 @@ satisfied. Phase 5 does not block any per-ticket flow.
 | `05_continuous/debt-finder` | 5 | agent | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn |
 | `05_continuous/adr-revisitor` | 5 | agent | Monthly: flags accepted ADRs whose context has materially shifted |
 | `05_continuous/debt-curator` | 5 | agent | Weekly: de-duplicates and prioritises debt candidates into one report |
+| `05_continuous/pr/patch-tag` | 5 | script | PR-merge: bumps the PATCH version and pushes a tag when a PR merges to `main`; skipped at `stopOnLevel` 3 |
 
 Clearing a satisfied `blockedby:`/`blocks:` pair once the blocking issue
 closes is not a separate scheduled agent -- the pipeline runs no scheduled
@@ -276,4 +277,4 @@ It fires on a weekly cron and supports manual dispatch.
 | Publication gates | A coverage threshold and configured exclusion rules filter the set; a duplicate-release check prevents creating a tag or release that already exists |
 | Publication | A GitHub Release is created with the generated notes as its body |
 | Logging | Release metadata, final status, and any errors are recorded in orchestrator logs after every run |
-| Fallback path | The `RELEASE - publish` GitHub Actions workflow (`.github/workflows/release.yml`) no longer runs on the Wednesday schedule (issue #621 cutover); it remains for an off-cycle `v*` tag push or an emergency manual dispatch |
+| Fallback path | None -- the `RELEASE - publish` GitHub Actions workflow (`.github/workflows/release.yml`) was removed entirely (issue #695); the orchestrator's `weekly-release` flow is the sole remaining release-cutting mechanism |

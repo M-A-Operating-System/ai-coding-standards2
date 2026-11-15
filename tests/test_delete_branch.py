@@ -245,6 +245,7 @@ class TestWakePullRequestClosed:
         env_patch = {
             "GITHUB_EVENT_NAME": "pull_request",
             "GITHUB_HEAD_REF": "issue-42",
+            "GITHUB_BASE_REF": "issue-41",
             "GITHUB_EVENT_PATH": str(event_file),
         }
         with patch.dict(os.environ, env_patch):
@@ -263,6 +264,7 @@ class TestWakePullRequestClosed:
         env_patch = {
             "GITHUB_EVENT_NAME": "pull_request",
             "GITHUB_HEAD_REF": "issue-99",
+            "GITHUB_BASE_REF": "issue-98",
             "GITHUB_EVENT_PATH": str(event_file),
         }
         with patch.dict(os.environ, env_patch):
@@ -321,7 +323,7 @@ class TestWakePullRequestClosed:
         event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
         args = _minimal_wake_args()
 
-        env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_HEAD_REF",)}
+        env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_HEAD_REF", "GITHUB_BASE_REF")}
         env["GITHUB_EVENT_NAME"] = "pull_request"
         env["GITHUB_EVENT_PATH"] = str(event_file)
 
@@ -344,6 +346,44 @@ class TestWakePullRequestClosed:
 
         mock_delete.assert_not_called()
         # result is None because of the pause check, not the PR-closed path
+
+    def test_wake_dispatches_pr_merge_flows_on_merge_to_main(self, tmp_path):
+        """RV-002: a PR merged to main must reach _run_pr_merge_flows.
+
+        Regression coverage for the dispatch path added in issue #694 -- the
+        other tests in this class cover the guard (non-main merges return
+        early, pre-existing tests were patched not to false-positive on this
+        path), but none exercised the positive case where GITHUB_BASE_REF is
+        actually "main" and the PR-merge flows are run.
+        """
+        event_file = tmp_path / "event.json"
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
+        args = _minimal_wake_args(interactive_result=False, agent=None, manual_override=False)
+
+        env_patch = {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_HEAD_REF": "issue-42",
+            "GITHUB_BASE_REF": "main",
+            "GITHUB_EVENT_PATH": str(event_file),
+        }
+
+        mock_gh_instance = MagicMock()
+        mock_gh_instance.list_open_issues.return_value = []
+
+        with patch.dict(os.environ, env_patch):
+            with patch("pipeline_orchestrator._call_delete_branch"):
+                with patch("pipeline_orchestrator._ensure_gh_cli"):
+                    with patch("pipeline_orchestrator._discover_github_token", return_value="fake-token"):
+                        with patch("pipeline_orchestrator.GitHubClient", return_value=mock_gh_instance):
+                            with patch("pipeline_orchestrator.load_pipeline", return_value=([], [])):
+                                with patch("pipeline_orchestrator._run_pr_merge_flows") as mock_run_flows:
+                                    result = _wake(args)
+
+        assert result is None, "_wake returns None after dispatching PR-merge flows (not a RunContext)"
+        mock_run_flows.assert_called_once()
+        dispatched_ctx = mock_run_flows.call_args[0][0]
+        assert dispatched_ctx.repo == "owner/repo"
+        assert dispatched_ctx.work_items == []
 
 
 # ---------------------------------------------------------------------------
