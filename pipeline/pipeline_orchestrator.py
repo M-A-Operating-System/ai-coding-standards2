@@ -1739,8 +1739,17 @@ def _append_metrics_record(
     allowlist.
 
     Raises RuntimeError when the append did not land, so a caller cannot read a
-    failure as a success (STD-ARCH-014). gh is accepted for interface symmetry
-    with _ensure_metrics_branch but unused here.
+    failure as a success (STD-ARCH-014).
+
+    gh.token is injected into the subprocess env as GITHUB_TOKEN/GH_TOKEN,
+    overriding whatever (if anything) those names carry in os.environ
+    (issue #711): os.environ is this process's own ambient state, which can
+    legitimately differ by call site and by how deep into a long headless
+    tick this call lands, while gh.token is the one credential this run
+    authenticated with from the start -- resolved once in _wake() and never
+    stale for the run's duration. Using it here removes the dependency on
+    os.environ still holding a usable copy of the same token by the time a
+    scheduled flow's claim (the last thing a tick does) runs.
     """
     script = _orchestration_script_path(_METRICS_APPEND_SCRIPT)
     if not script.exists():
@@ -1765,6 +1774,9 @@ def _append_metrics_record(
             "AI_AGILE_METRICS_COMMIT_MESSAGE": commit_message,
             "AI_AGILE_METRICS_RETRIES": str(_retries),
         }
+        if gh is not None and getattr(gh, "token", None):
+            env["GITHUB_TOKEN"] = gh.token
+            env["GH_TOKEN"] = gh.token
         result = subprocess.run(
             ["bash", str(script), record_path],
             env=env, capture_output=True, text=True, timeout=300,

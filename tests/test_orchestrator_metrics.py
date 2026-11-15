@@ -43,7 +43,6 @@ from pipeline_orchestrator import (
     _METRICS_APPEND_ENV_VARS,
     _post_cycle_metrics,
     _StreamAccumulator,
-    claim_schedule,
 )
 
 # ---------------------------------------------------------------------------
@@ -1284,3 +1283,45 @@ class TestScheduleClaimTokenPropagation:
         env = envs[0]
         assert "GH_TOKEN" in env
         assert env["GH_TOKEN"] == test_token
+
+    def test_github_token_absent_from_environ_still_reaches_subprocess_via_gh_token(self):
+        """Regression for issue #711's actual failure: GITHUB_TOKEN/GH_TOKEN
+        absent from os.environ (reproducing the real scheduled-run failure
+        -- 'fatal: could not read Username') must not leave the subprocess
+        without a credential when a real GitHubClient is available. gh.token
+        is the fix: it is injected into the subprocess env regardless of
+        what os.environ carries.
+        """
+        test_token = "ghs_client_token_not_in_environ"
+        script_envs = []
+
+        def fake_run(cmd, **kwargs):
+            if "env" in kwargs:
+                script_envs.append(kwargs["env"])
+            r = MagicMock()
+            r.returncode = 0
+            r.stdout = ""
+            r.stderr = ""
+            return r
+
+        fake_gh = MagicMock()
+        fake_gh.token = test_token
+
+        record = {"agent_id": "schedule", "event": "schedule.claim", "github_issue_number": None}
+        env_overrides = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/root"),
+            # GITHUB_TOKEN, GH_TOKEN, AI_AGILE_BOT_TOKEN all absent from
+            # os.environ -- the exact condition observed in the failing run.
+        }
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=fake_run), \
+             patch.dict("pipeline_orchestrator.os.environ", env_overrides, clear=True):
+            _append_metrics_record(fake_gh, "owner/repo", record)
+
+        assert len(script_envs) == 1
+        env = script_envs[0]
+        assert env.get("GITHUB_TOKEN") == test_token, (
+            "GITHUB_TOKEN must come from gh.token when absent from os.environ, "
+            "so append-metrics-record.sh's git push never fails for lack of a credential"
+        )
+        assert env.get("GH_TOKEN") == test_token
