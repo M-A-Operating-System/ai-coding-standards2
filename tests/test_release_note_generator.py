@@ -156,6 +156,27 @@ class TestExtractReleaseNotesSection:
         body = '### release notes\n\nsome prose\n'
         assert extract_release_notes_section(body) == 'some prose'
 
+    def test_stops_at_h2_section_heading(self):
+        """Scenario: Release notes extraction stops at a ## section heading (issue #704)."""
+        body = (
+            '### Release Notes\n\nShort summary.\n\n'
+            '## Problem Statement\n\nLong problem text.'
+        )
+        result = extract_release_notes_section(body)
+        assert result == 'Short summary.'
+        assert 'Problem Statement' not in result
+        assert 'Long problem text.' not in result
+
+    def test_stops_at_h3_heading(self):
+        """Scenario: Release notes extraction still stops at the next ### heading (issue #704)."""
+        body = (
+            '### Release Notes\n\nShort summary.\n\n'
+            '### Next Section\n\nOther content.'
+        )
+        result = extract_release_notes_section(body)
+        assert result == 'Short summary.'
+        assert 'Other content.' not in result
+
 
 # ---------------------------------------------------------------------------
 # classify_issue
