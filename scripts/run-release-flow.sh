@@ -147,7 +147,7 @@ for ref in refs:
     if m:
         tags.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
 if not tags:
-    print('v2.1.0')
+    print('v0.1.0')
     sys.exit(0)
 tags.sort(reverse=True)
 major, minor, _ = tags[0]

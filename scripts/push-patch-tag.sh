@@ -118,7 +118,7 @@ for t in tags:
     if m:
         versions.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
 if not versions:
-    latest = (2, 0, 0)
+    latest = (0, 0, 0)
 else:
     versions.sort(reverse=True)
     latest = versions[0]

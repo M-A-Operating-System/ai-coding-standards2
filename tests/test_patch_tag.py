@@ -9,7 +9,7 @@ Covers:
 - Scenario R3 (idempotency): when HEAD of main is already tagged with a vX.Y.Z
   tag, the script outputs AI_AGILE_STATUS: complete and does not create a new tag.
 - Scenario R4 (no prior tags): when no vX.Y.Z tags exist, the script starts at
-  v2.0.0 and pushes v2.0.1.
+  v0.0.0 and pushes v0.0.1.
 - Scenario R5 (PATCH bump): when prior tags exist, the script bumps the PATCH
   component of the highest existing tag.
 """
@@ -286,14 +286,14 @@ class TestPatchTagIdempotency:
 
 
 # ---------------------------------------------------------------------------
-# Scenario R4: no prior tags -> starts at v2.0.1
+# Scenario R4: no prior tags -> starts at v0.0.1
 # ---------------------------------------------------------------------------
 
 class TestPatchTagNoPriorTags:
-    """When no vX.Y.Z tags exist, the script should start at v2.0.1."""
+    """When no vX.Y.Z tags exist, the script should start at v0.0.1."""
 
-    def test_no_prior_tags_pushes_v2_0_1(self, tmp_path):
-        """Scenario R4: no tags -> next tag is v2.0.1 (baseline is v2.0.0)."""
+    def test_no_prior_tags_pushes_v0_0_1(self, tmp_path):
+        """Scenario R4: no tags -> next tag is v0.0.1 (baseline is v0.0.0)."""
         calls = []
 
         lines = [
@@ -329,8 +329,8 @@ class TestPatchTagNoPriorTags:
         assert "AI_AGILE_STATUS: complete" in result.stdout
 
         ref_calls = (tmp_path / "ref_calls.txt").read_text()
-        assert "v2.0.1" in ref_calls, (
-            f"expected v2.0.1 to be pushed; ref creation args: {ref_calls}"
+        assert "v0.0.1" in ref_calls, (
+            f"expected v0.0.1 to be pushed; ref creation args: {ref_calls}"
         )
 
     def test_no_prior_tags_next_tag_logged(self, tmp_path):
@@ -356,8 +356,8 @@ class TestPatchTagNoPriorTags:
         (tmp_path / "gh").chmod((tmp_path / "gh").stat().st_mode | stat.S_IEXEC)
 
         result = _run_script(tmp_path)
-        assert "v2.0.1" in result.stderr, (
-            f"script should log 'v2.0.1' to stderr; got: {result.stderr}"
+        assert "v0.0.1" in result.stderr, (
+            f"script should log 'v0.0.1' to stderr; got: {result.stderr}"
         )
 
 
