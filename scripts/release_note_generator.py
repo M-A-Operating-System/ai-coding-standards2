@@ -41,7 +41,7 @@ _CLOSING_RE = re.compile(
 )
 
 _RELEASE_NOTES_RE = re.compile(
-    r'###\s+Release\s+Notes[ \t]*\n(.*?)(?=\n###|\Z)',
+    r'###\s+Release\s+Notes[ \t]*\n(.*?)(?=\n#{1,3}\s|\Z)',
     re.DOTALL | re.IGNORECASE,
 )
 
