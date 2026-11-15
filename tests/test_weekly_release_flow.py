@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
 
 import pipeline_orchestrator as orch
 from pipeline_orchestrator import AgentDef, WorkItem, cron_matches, load_pipeline
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def _t(text: str) -> datetime:
@@ -273,14 +273,16 @@ class TestRunReleaseFlowNoChange:
 
     def test_no_change_when_no_prior_release(self, tmp_path):
         """When there is no prior release (404, real gh exits non-zero with
-        no stdout), epoch date is used and an empty PR/issue list still
-        triggers no-change."""
+        no stdout), the fallback window starts 7 days before the run, not
+        the Unix epoch, and an empty PR/issue list still triggers no-change."""
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": None,
             "pulls?state=closed": _NO_PULLS,
             "repos/org/repo/issues": _NO_ISSUES,
         })
+        before = datetime.now(timezone.utc)
         result = _run_script(tmp_path, fake_bin)
+        after = datetime.now(timezone.utc)
         assert result.returncode == 0
         assert "AI_AGILE_STATUS: complete" in result.stdout
         json_line = next(
@@ -291,6 +293,19 @@ class TestRunReleaseFlowNoChange:
         assert json_line is not None
         record = json.loads(json_line)
         assert record["outcome"] == "no-change"
+        last_date = datetime.fromisoformat(
+            record["last_release_date"].replace("Z", "+00:00")
+        )
+        assert last_date.year > 1970, (
+            f"last_release_date must not be the Unix epoch; got "
+            f"{record['last_release_date']!r}"
+        )
+        window_before = before - timedelta(days=7) - timedelta(minutes=1)
+        window_after = after - timedelta(days=7) + timedelta(minutes=1)
+        assert window_before <= last_date <= window_after, (
+            f"last_release_date {record['last_release_date']!r} is not within "
+            f"1 minute of 7 days before the run"
+        )
 
 
 class TestRunReleaseFlowPublish:

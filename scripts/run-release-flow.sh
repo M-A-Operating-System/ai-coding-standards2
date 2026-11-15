@@ -45,7 +45,7 @@ fi
 # Find the last published GitHub Release.
 # ---------------------------------------------------------------------------
 
-LAST_RELEASE_DATE="1970-01-01T00:00:00Z"
+LAST_RELEASE_DATE="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 
 if LATEST_JSON="$(gh api "repos/$REPO/releases/latest" 2>/dev/null)"; then
     _DATE="$(printf '%s' "$LATEST_JSON" \
