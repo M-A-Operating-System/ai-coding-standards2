@@ -664,3 +664,209 @@ class TestWorkflowProposals:
         which an owner runs at any time (git rm .pipeline-stop / --clear-stop)."""
         restart = Path(__file__).parent.parent / ".github/workflows/pipeline-restart.yml"
         assert not restart.exists(), "pipeline-restart.yml must not exist"
+
+
+# ---------------------------------------------------------------------------
+# TestScheduledFlowStopEnforcement
+# ---------------------------------------------------------------------------
+
+class TestScheduledFlowStopEnforcement:
+    """Scheduled flows respect the active stop level in headless mode (issue #721).
+
+    Scenarios: R1 (blocked when covered), R3 (interactive unaffected), R4b (not
+    covered -> dispatches).
+    """
+
+    def _make_agent_def(self, stop_on_level=1):
+        from pipeline_orchestrator import AgentDef
+        return AgentDef(
+            agent="00_ondemand/codebase-reviewer",
+            phase="00_ondemand",
+            objects=[],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test scheduled step",
+            stop_on_level=stop_on_level,
+        )
+
+    def _make_ctx(self):
+        ctx = MagicMock()
+        ctx.scoped_to_item = False
+        ctx.agents = []
+        ctx.dry_run = False
+        ctx.gh = MagicMock()
+        ctx.repo = "test/repo"
+        return ctx
+
+    def test_headless_level1_stop_blocks_flow_with_stop_on_level_1(self, tmp_path, monkeypatch):
+        """Scenario R1: scheduled flow not dispatched when stopOnLevel 1 is covered by level-1 stop."""
+        import pipeline_orchestrator
+        from pipeline_orchestrator import _run_scheduled_flows
+
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({"reason": "upgrading", "level": 1}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        flows = {"codebase-review": ("0 2 * * 0", None, [self._make_agent_def(stop_on_level=1)])}
+        ctx = self._make_ctx()
+        claim_calls = []
+
+        with patch.object(pipeline_orchestrator, "_scheduled_flows", return_value=flows), \
+             patch.object(pipeline_orchestrator, "read_metrics_records", return_value=[]), \
+             patch.object(pipeline_orchestrator, "claim_schedule",
+                          side_effect=lambda *a, **kw: claim_calls.append(a) or True), \
+             patch.object(pipeline_orchestrator, "_run_scheduled_step"):
+            ran = _run_scheduled_flows(ctx)
+
+        assert ran == 0, "Flow must not run when covered by active stop level"
+        assert not claim_calls, "claim_schedule must not be called when flow is blocked"
+
+    def test_headless_level1_stop_does_not_block_flow_with_stop_on_level_2(self, tmp_path, monkeypatch):
+        """Scenario R4b: level-1 stop does not block a flow whose step has stopOnLevel 2."""
+        import pipeline_orchestrator
+        from pipeline_orchestrator import _run_scheduled_flows
+
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({"reason": "partial stop", "level": 1}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        flows = {"maintenance-flow": ("0 3 * * 0", None, [self._make_agent_def(stop_on_level=2)])}
+        ctx = self._make_ctx()
+        claim_calls = []
+
+        with patch.object(pipeline_orchestrator, "_scheduled_flows", return_value=flows), \
+             patch.object(pipeline_orchestrator, "read_metrics_records", return_value=[]), \
+             patch.object(pipeline_orchestrator, "schedule_is_due", return_value=True), \
+             patch.object(pipeline_orchestrator, "claim_schedule",
+                          side_effect=lambda *a, **kw: claim_calls.append(a) or True), \
+             patch.object(pipeline_orchestrator, "release_schedule"), \
+             patch.object(pipeline_orchestrator, "_run_scheduled_step"):
+            ran = _run_scheduled_flows(ctx)
+
+        assert claim_calls, "claim_schedule must be called when flow stopOnLevel is not covered"
+
+    def test_interactive_mode_ignores_stop_for_scheduled_flow(self, tmp_path, monkeypatch):
+        """Scenario R3: interactive (non-headless) run dispatches despite level-1 stop."""
+        import pipeline_orchestrator
+        from pipeline_orchestrator import _run_scheduled_flows
+
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({"reason": "test", "level": 1}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", False)
+
+        flows = {"codebase-review": ("0 2 * * 0", None, [self._make_agent_def(stop_on_level=1)])}
+        ctx = self._make_ctx()
+        claim_calls = []
+
+        with patch.object(pipeline_orchestrator, "_scheduled_flows", return_value=flows), \
+             patch.object(pipeline_orchestrator, "read_metrics_records", return_value=[]), \
+             patch.object(pipeline_orchestrator, "schedule_is_due", return_value=True), \
+             patch.object(pipeline_orchestrator, "claim_schedule",
+                          side_effect=lambda *a, **kw: claim_calls.append(a) or True), \
+             patch.object(pipeline_orchestrator, "release_schedule"), \
+             patch.object(pipeline_orchestrator, "_run_scheduled_step"):
+            _run_scheduled_flows(ctx)
+
+        assert claim_calls, "Interactive mode must proceed to claim despite active stop marker"
+
+
+# ---------------------------------------------------------------------------
+# TestPrMergeFlowStopEnforcement
+# ---------------------------------------------------------------------------
+
+class TestPrMergeFlowStopEnforcement:
+    """PR-merge-triggered flows respect the active stop level in headless mode (issue #721).
+
+    Scenarios: R2 (blocked when covered), interactive unaffected, not covered -> dispatches.
+    """
+
+    def _make_agent_def(self, stop_on_level=1):
+        from pipeline_orchestrator import AgentDef
+        return AgentDef(
+            agent="00_ondemand/patch-tagger",
+            phase="00_ondemand",
+            objects=[],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test pr_merge step",
+            stop_on_level=stop_on_level,
+        )
+
+    def _make_ctx(self):
+        ctx = MagicMock()
+        ctx.agents = []
+        ctx.dry_run = False
+        ctx.gh = MagicMock()
+        ctx.repo = "test/repo"
+        return ctx
+
+    def test_headless_level1_stop_blocks_pr_merge_flow_with_stop_on_level_1(self, tmp_path, monkeypatch):
+        """Scenario R2: PR-merge flow not dispatched when stopOnLevel 1 is covered by level-1 stop."""
+        import pipeline_orchestrator
+        from pipeline_orchestrator import _run_pr_merge_flows
+
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({"reason": "upgrading", "level": 1}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        flows = {"patch-tag": [self._make_agent_def(stop_on_level=1)]}
+        ctx = self._make_ctx()
+        step_calls = []
+
+        with patch.object(pipeline_orchestrator, "_pr_merge_flows", return_value=flows), \
+             patch.object(pipeline_orchestrator, "_run_scheduled_step",
+                          side_effect=lambda *a, **kw: step_calls.append(a)):
+            ran = _run_pr_merge_flows(ctx)
+
+        assert ran == 0, "PR-merge flow must not run when covered by active stop level"
+        assert not step_calls, "_run_scheduled_step must not be called when flow is blocked"
+
+    def test_headless_level1_stop_does_not_block_pr_merge_flow_with_stop_on_level_2(self, tmp_path, monkeypatch):
+        """PR-merge flow with stopOnLevel 2 is not blocked by a level-1 stop."""
+        import pipeline_orchestrator
+        from pipeline_orchestrator import _run_pr_merge_flows
+
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({"reason": "partial stop", "level": 1}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        flows = {"patch-tag": [self._make_agent_def(stop_on_level=2)]}
+        ctx = self._make_ctx()
+        step_calls = []
+
+        with patch.object(pipeline_orchestrator, "_pr_merge_flows", return_value=flows), \
+             patch.object(pipeline_orchestrator, "_run_scheduled_step",
+                          side_effect=lambda *a, **kw: step_calls.append(a)):
+            ran = _run_pr_merge_flows(ctx)
+
+        assert step_calls, "_run_scheduled_step must be called when stopOnLevel is not covered"
+
+    def test_interactive_mode_ignores_stop_for_pr_merge_flow(self, tmp_path, monkeypatch):
+        """Interactive (non-headless) run dispatches PR-merge flow despite active stop."""
+        import pipeline_orchestrator
+        from pipeline_orchestrator import _run_pr_merge_flows
+
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({"reason": "test", "level": 1}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", False)
+
+        flows = {"patch-tag": [self._make_agent_def(stop_on_level=1)]}
+        ctx = self._make_ctx()
+        step_calls = []
+
+        with patch.object(pipeline_orchestrator, "_pr_merge_flows", return_value=flows), \
+             patch.object(pipeline_orchestrator, "_run_scheduled_step",
+                          side_effect=lambda *a, **kw: step_calls.append(a)):
+            _run_pr_merge_flows(ctx)
+
+        assert step_calls, "Interactive mode must dispatch PR-merge flow despite active stop marker"

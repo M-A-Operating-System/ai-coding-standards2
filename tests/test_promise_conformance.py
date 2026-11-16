@@ -1420,7 +1420,10 @@ _MODE_BRANCHES: dict[str, str] = {
     # The emergency stop is gated on _HEADLESS: a headless tick skips steps at
     # or below the active stop level; an interactive session logs and ignores.
     # _check_controls() no longer branches here -- stop is per-step (issue #615).
+    # Scheduled and event-triggered flows gain the same guard (issue #721).
     "_wake": "Whether the emergency stop applies",
+    "_run_scheduled_flows": "Whether the emergency stop applies",
+    "_run_pr_merge_flows": "Whether the emergency stop applies",
     # A headless run has no session to inherit auth from and needs
     # ANTHROPIC_API_KEY; an interactive one uses the session's own login.
     "_build_agent_env": "Which credentials are used",

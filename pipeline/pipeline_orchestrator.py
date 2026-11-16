@@ -9243,8 +9243,19 @@ def _run_scheduled_flows(ctx: "RunContext") -> int:
         return 0
     now = _now_utc()
     records = read_metrics_records(ctx.repo)
+    # Read stop level once per call, mirroring process_work_item's one-read-per-tick
+    # pattern (issue #721). Interactive runs skip the check entirely.
+    active_stop_level = 0
+    if _HEADLESS:
+        active_stop_level, _ = is_pipeline_stopped()
     ran = 0
     for flow, (cron, tz, steps) in flows.items():
+        if active_stop_level > 0 and all(s.stop_on_level <= active_stop_level for s in steps):
+            log.info(
+                "  stop schedule %-30s [stop level %d covers stop_on_level %d]",
+                flow, active_stop_level, steps[0].stop_on_level,
+            )
+            continue
         try:
             due = schedule_is_due(cron, flow_last_run(records, flow), now, tz=tz)
         except (ValueError, KeyError) as exc:
@@ -9301,8 +9312,18 @@ def _run_pr_merge_flows(ctx: "RunContext") -> int:
     flows = _pr_merge_flows(ctx.agents)
     if not flows:
         return 0
+    # Read stop level once per call (issue #721). Interactive runs skip the check.
+    active_stop_level = 0
+    if _HEADLESS:
+        active_stop_level, _ = is_pipeline_stopped()
     ran = 0
     for flow, steps in flows.items():
+        if active_stop_level > 0 and all(s.stop_on_level <= active_stop_level for s in steps):
+            log.info(
+                "  stop pr_merge_flow %-26s [stop level %d covers stop_on_level %d]",
+                flow, active_stop_level, steps[0].stop_on_level,
+            )
+            continue
         work_item = _pr_merge_work_item(flow)
         for agent_def in steps:
             _run_scheduled_step(ctx, agent_def, work_item)
