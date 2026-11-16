@@ -199,3 +199,35 @@
 **Given** `append-metrics-record.sh` has sourced `scripts/lib/github-identity.sh` and `AI_AGILE_GH_IDENTITY` is set by that source
 **When** any claim or metrics-append invocation runs
 **Then** a log line naming the resolved identity source (or "unset") is written to stderr before any git operation begins
+
+## Scenario: Scheduled flow is not dispatched when its stopOnLevel is covered in headless mode
+
+**Given** the pipeline is running in headless mode
+**And** the `.pipeline-stop` file is active at stop level 1
+**And** a scheduled flow has a step with `stopOnLevel` 1
+**When** `_run_scheduled_flows()` processes that flow
+**Then** the flow is not dispatched and no claim is attempted
+
+## Scenario: PR-merge flow is not dispatched when its stopOnLevel is covered in headless mode
+
+**Given** the pipeline is running in headless mode
+**And** the `.pipeline-stop` file is active at stop level 1
+**And** a PR-merge-triggered flow has a step with `stopOnLevel` 1
+**When** `_run_pr_merge_flows()` processes that flow
+**Then** the flow is not dispatched and no claim is attempted
+
+## Scenario: Interactive run dispatches a scheduled flow despite its stopOnLevel being covered
+
+**Given** the pipeline is running in interactive (non-headless) mode
+**And** the `.pipeline-stop` file is active at stop level 1
+**And** a scheduled flow has a step with `stopOnLevel` 1
+**When** `_run_scheduled_flows()` processes that flow
+**Then** the flow proceeds to dispatch normally
+
+## Scenario: Scheduled flow with stopOnLevel above the active stop level still dispatches
+
+**Given** the pipeline is running in headless mode
+**And** the `.pipeline-stop` file is active at stop level 1
+**And** a scheduled flow has a step with `stopOnLevel` 2
+**When** `_run_scheduled_flows()` processes that flow
+**Then** the flow proceeds to dispatch as normal
