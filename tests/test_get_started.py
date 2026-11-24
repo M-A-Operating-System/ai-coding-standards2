@@ -158,6 +158,65 @@ class TestInstallAdrs:
 
 
 # ---------------------------------------------------------------------------
+# TestInstallDefaultPipelineStop — new repos onboard with agent work paused
+# ---------------------------------------------------------------------------
+
+class TestInstallDefaultPipelineStop:
+    def test_seeds_level_2_stop_marker(self, tmp_path):
+        import json
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_default_pipeline_stop(consuming, dry_run=False)
+
+        assert result is True
+        dst = consuming / ".pipeline-stop"
+        assert dst.exists()
+        data = json.loads(dst.read_text())
+        assert data["level"] == 2
+        assert data["stopped_by"] == "get_started.py"
+        assert "stopped_at" in data
+        assert "reason" in data
+
+    def test_never_overwritten_even_if_level_changed(self, tmp_path):
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        existing = consuming / ".pipeline-stop"
+        existing.write_text('{"level": 3, "reason": "operator override"}')
+
+        result = get_started.install_default_pipeline_stop(consuming, dry_run=False)
+
+        assert result is False
+        assert existing.read_text() == '{"level": 3, "reason": "operator override"}'
+
+    def test_never_overwritten_once_cleared(self, tmp_path):
+        # A repo that has cleared its stop (file absent after being present
+        # once) is a legitimate end state -- re-running onboarding must not
+        # silently re-pause it.
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / ".pipeline-stop"
+
+        first = get_started.install_default_pipeline_stop(consuming, dry_run=False)
+        assert first is True
+        dst.unlink()
+
+        second = get_started.install_default_pipeline_stop(consuming, dry_run=False)
+
+        assert second is True
+        assert dst.exists()
+
+    def test_dry_run_does_not_write(self, tmp_path):
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_default_pipeline_stop(consuming, dry_run=True)
+
+        assert result is True
+        assert not (consuming / ".pipeline-stop").exists()
+
+
+# ---------------------------------------------------------------------------
 # TestInstallClaudeWindows — copy behaviour (simulated via sys.platform == "win32")
 # ---------------------------------------------------------------------------
 

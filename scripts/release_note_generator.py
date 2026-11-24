@@ -354,18 +354,20 @@ def render_markdown(entries, start, end, repo):
         lines.append(f'## {cat}')
         lines.append('')
         for entry in cat_entries:
-            prose = entry['release_notes'] if entry['release_notes'] is not None else entry['pr_title']
             if entry['category'] == 'HOTFIX':
                 link_title = entry['pr_title']
                 link_url = entry.get('pr_url', '')
                 suffix = ''
+                prose = entry['release_notes']
             else:
                 link_title = entry['issue_title']
                 link_url = entry['issue_url']
                 suffix = ' *(reopened)*' if entry['reopened'] else ''
+                prose = entry['release_notes'] if entry['release_notes'] is not None else entry['pr_title']
             lines.append(f'### [{link_title}]({link_url}){suffix}')
-            lines.append('')
-            lines.append(prose)
+            if prose is not None:
+                lines.append('')
+                lines.append(prose)
             lines.append('')
 
     return '\n'.join(lines)
