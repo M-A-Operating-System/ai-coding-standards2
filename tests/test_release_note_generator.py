@@ -610,6 +610,32 @@ class TestCollateHotfix:
         assert hotfix_entries == []
         assert any(d['ref'] == 'other/repo#99' for d in diag['cross_repo_refs'])
 
+    def test_hotfix_entry_uses_pr_body_release_notes_section(self):
+        """Scenario (issue #686): HOTFIX entry uses PR body Release Notes section when present."""
+        body = '### Release Notes\n\nEmergency patch deployed successfully.\n\n### Details\n\nMore info.'
+        pr = _make_pr(60, merged_at='2026-10-04T10:00:00Z',
+                      body=body, title='PR title that should not appear')
+        client = self._make_client([pr])
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry['category'] == 'HOTFIX'
+        assert entry['release_notes'] == 'Emergency patch deployed successfully.'
+        assert entry['pr_title'] == 'PR title that should not appear'
+
+    def test_hotfix_entry_falls_back_to_pr_title_when_no_release_notes_section(self):
+        """Scenario (issue #686): HOTFIX entry falls back to PR title when body has no Release Notes section."""
+        body = '## Summary\n\nFixed a critical bug.\n\n## Details\n\nNo release notes heading here.'
+        pr = _make_pr(61, merged_at='2026-10-04T10:00:00Z',
+                      body=body, title='Critical bug fix')
+        client = self._make_client([pr])
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry['category'] == 'HOTFIX'
+        assert entry['release_notes'] is None
+        assert entry['pr_title'] == 'Critical bug fix'
+
 
 # ---------------------------------------------------------------------------
 # render_markdown -- HOTFIX (issue #685)

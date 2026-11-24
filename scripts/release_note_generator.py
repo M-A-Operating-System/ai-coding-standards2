@@ -309,7 +309,7 @@ def collate(client, repo, start, end):
             'issue_title': None,
             'issue_url': None,
             'category': 'HOTFIX',
-            'release_notes': None,
+            'release_notes': extract_release_notes_section(pr.get('body') or ''),
             'pr_title': pr.get('title', ''),
             'pr_url': pr.get('html_url', ''),
             'pr_numbers': [pr['number']],
