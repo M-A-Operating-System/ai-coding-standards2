@@ -30,7 +30,32 @@ and you can comment or edit at any time.
 
 To give your issue the best start, include a **problem statement** and
 **acceptance criteria**. Issues missing required fields get a corrective
-comment from the classifier explaining what to add.
+comment from the classifier explaining what to add. The
+[bug report](.github/ISSUE_TEMPLATE/bug_report.yml) and
+[feature request](.github/ISSUE_TEMPLATE/feature_request.yml) templates
+ask for exactly these fields.
+
+---
+
+## Reporting from a consuming repo's own agent
+
+This repo is public, so an AI agent running in a repo that consumes this
+pipeline (via the submodule) can file a bug directly against it — no
+special access beyond a normal GitHub token with `public_repo` scope:
+
+```bash
+gh api repos/M-A-Operating-System/ai-coding-standards2/issues \
+  -f title="[BUG] ..." \
+  -f body="$(cat report.md)"
+```
+
+or the equivalent `POST /repos/{owner}/{repo}/issues` REST call. Use the
+[bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)'s fields as the
+body structure — problem statement, environment (including which commit of
+this repo was in use), steps to reproduce, expected/actual result, and
+acceptance criteria — and cite exact file/line references and run URLs
+where you have them. `issue-classifier` and `prd-writer` will pick it up
+from there the same as any other issue.
 
 ---
 
