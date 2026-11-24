@@ -87,7 +87,7 @@ def read_records() -> list:
     legitimately empty ledger -- e.g. before the first record was ever
     appended). A `git fetch` failure (network, auth, the branch missing
     entirely) is NOT swallowed here (issue #533 PR review, RV-001): it
-    propagates as an uncaught CalledProcessError, which main() lets reach
+    propagates as an uncaught RuntimeError, which main() lets reach
     a nonzero exit so aggregate-metrics.sh reports `blocked`, not
     `complete` -- STD-ARCH-014 fail closed. Silently returning [] on a
     fetch failure would have been indistinguishable from "nothing to
