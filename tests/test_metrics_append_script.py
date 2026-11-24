@@ -275,6 +275,28 @@ class TestGitHubTokenAuth:
         assert "Authorization: Basic" not in res.stderr
         assert "Authorization: Basic" not in res.stdout
 
+    def test_preserves_checkout_extraheader(self, remote_and_clone):
+        """R4 (issue #733): the extraHeader actions/checkout wrote into
+        .git/config before this script ran must still be present after it
+        runs -- the readers that run after this step (metrics_aggregator.py,
+        metrics_report.py) have no credential of their own and rely on it."""
+        _remote, clone = remote_and_clone
+        _git(
+            "config", "--local",
+            "http.https://github.com/.extraHeader",
+            "AUTHORIZATION: basic checkout-provided-header",
+            cwd=clone,
+        )
+        res = self._run_with_token(clone, "ghp_anytesttoken")
+        assert res.returncode == 0, res.stderr
+        show = _git(
+            "config", "--local", "--get",
+            "http.https://github.com/.extraHeader",
+            cwd=clone, check=False,
+        )
+        assert show.returncode == 0, "extraHeader was removed from .git/config"
+        assert show.stdout.strip() == "AUTHORIZATION: basic checkout-provided-header"
+
 
 class TestItsInputContract:
     def test_refuses_a_missing_record_file(self, remote_and_clone):
