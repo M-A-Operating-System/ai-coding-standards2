@@ -1,0 +1,32 @@
+name: Feature request / enhancement
+description: Propose a new capability or an improvement to an existing one.
+labels: ["classification: enhancement"]
+body:
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem statement
+      description: What's missing or awkward today, and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-change
+    attributes:
+      label: Proposed change
+      description: What you'd like to see, and roughly where it would land.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: How would we know this is done? A short checklist is fine.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / references
+      description: Related issues, docs, or links.
+    validations:
+      required: false
