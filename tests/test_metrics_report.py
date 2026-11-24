@@ -166,6 +166,14 @@ class TestReadAndProduce:
         ]))
         assert read_aggregate_records() == []
 
+    def test_read_aggregate_records_raises_on_fetch_failure(self, monkeypatch):
+        monkeypatch.setattr("subprocess.run", MagicMock(return_value=MagicMock(
+            returncode=128,
+            stderr=b"fatal: could not read Username for 'https://github.com'",
+        )))
+        with pytest.raises(RuntimeError):
+            read_aggregate_records()
+
     def test_read_aggregate_records_skips_corrupt_lines(self, monkeypatch):
         good = json.dumps(_blended("2026-09-01T00:00:00Z", count_issues=1))
         lines = good + "\n{ not json\n"
