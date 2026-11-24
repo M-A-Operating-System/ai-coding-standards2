@@ -59,6 +59,20 @@ def _dt(ts):
     return datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
 
 
+def _hotfix_entry(pr_number, pr_title, pr_url):
+    return {
+        'issue_number': None,
+        'issue_title': None,
+        'issue_url': None,
+        'category': 'HOTFIX',
+        'release_notes': None,
+        'pr_title': pr_title,
+        'pr_url': pr_url,
+        'pr_numbers': [pr_number],
+        'reopened': False,
+    }
+
+
 def _make_pr(number, merged_at=None, body='', labels=None, updated_at=None, title='PR title'):
     if updated_at is None:
         updated_at = merged_at or '2026-10-05T12:00:00Z'
@@ -344,7 +358,7 @@ class TestCollate:
         client = self._make_client([pr], {5: issue5})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 5 for e in diag['excluded'])
+        assert any(e['number'] == 5 for e in diag['excluded'])
 
     def test_excluded_label_ignore_for_release(self):
         pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5')
@@ -352,7 +366,7 @@ class TestCollate:
         client = self._make_client([pr], {5: issue5})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 5 for e in diag['excluded'])
+        assert any(e['number'] == 5 for e in diag['excluded'])
 
     def test_sub_issue_excluded_from_release_notes(self):
         """Scenario R1: sub-issue carrying parent-issue: label is excluded."""
@@ -362,7 +376,7 @@ class TestCollate:
         client = self._make_client([pr], {614: issue614})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 614 for e in diag['excluded'])
+        assert any(e['number'] == 614 for e in diag['excluded'])
 
     def test_parent_epic_not_excluded(self):
         """Scenario R2: parent epic (no parent-issue: label) appears normally."""
@@ -372,7 +386,7 @@ class TestCollate:
         client = self._make_client([pr], {608: issue608})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert any(e['issue_number'] == 608 for e in entries)
-        assert not any(e['issue'] == 608 for e in diag['excluded'])
+        assert not any(e['number'] == 608 for e in diag['excluded'])
 
     def test_sub_issue_excluded_reason_in_diagnostics(self):
         """Scenario R3: diagnostics[excluded] contains reason 'sub-issue of #608'."""
@@ -381,7 +395,7 @@ class TestCollate:
                                body='### Release Notes\n\nSub work.')
         client = self._make_client([pr], {614: issue614})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
-        excluded_entry = next((e for e in diag['excluded'] if e['issue'] == 614), None)
+        excluded_entry = next((e for e in diag['excluded'] if e['number'] == 614), None)
         assert excluded_entry is not None
         assert excluded_entry['reason'] == 'sub-issue of #608'
 
@@ -394,7 +408,7 @@ class TestCollate:
         client = self._make_client([pr], {5: issue5})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 5 for e in diag['excluded'])
+        assert any(e['number'] == 5 for e in diag['excluded'])
 
     def test_reopened_issue_emits_diagnostic(self):
         pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5')
@@ -483,6 +497,237 @@ class TestCollate:
 
 
 # ---------------------------------------------------------------------------
+# collate -- HOTFIX (issue #685)
+# ---------------------------------------------------------------------------
+
+class TestCollateHotfix:
+    """Realises the HOTFIX Gherkin scenarios in issue #685.
+
+    Scenario: Unlinked merged PR produces a HOTFIX entry
+    Scenario: HOTFIX candidate carrying an excluded label is not rendered
+    Scenario: HOTFIX PR number appears in prs_covered
+    """
+
+    def _make_client(self, prs):
+        client = MagicMock()
+
+        def get_side_effect(path):
+            if '/pulls?' in path:
+                m = re.search(r'[?&]page=(\d+)', path)
+                page = int(m.group(1)) if m else 1
+                if page == 1:
+                    return prs
+                return []
+            raise ValueError(f'Unexpected path for HOTFIX test: {path}')
+
+        client.get.side_effect = get_side_effect
+        return client
+
+    def test_unlinked_pr_produces_hotfix_entry(self):
+        """Scenario: Unlinked merged PR produces a HOTFIX entry"""
+        pr = _make_pr(50, merged_at='2026-10-04T10:00:00Z', body='',
+                      title='Fix critical outage')
+        client = self._make_client([pr])
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry['category'] == 'HOTFIX'
+        assert entry['pr_title'] == 'Fix critical outage'
+        assert entry['pr_numbers'] == [50]
+        assert entry['issue_number'] is None
+
+    def test_hotfix_prose_is_pr_title(self):
+        pr = _make_pr(51, merged_at='2026-10-04T10:00:00Z', body='',
+                      title='Emergency patch')
+        client = self._make_client([pr])
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        entry = entries[0]
+        assert entry['pr_title'] == 'Emergency patch'
+        assert entry['release_notes'] is None
+
+    def test_hotfix_candidate_excluded_by_dependencies_label(self):
+        """Scenario: HOTFIX candidate carrying an excluded label is not rendered"""
+        pr = _make_pr(52, merged_at='2026-10-04T10:00:00Z', body='',
+                      labels=['dependencies'])
+        client = self._make_client([pr])
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert entries == []
+        excluded_prs = [e['number'] for e in diag['excluded'] if e.get('type') == 'pr']
+        assert 52 in excluded_prs
+
+    def test_hotfix_candidate_excluded_by_ignore_for_release_label(self):
+        pr = _make_pr(53, merged_at='2026-10-04T10:00:00Z', body='',
+                      labels=['ignore-for-release'])
+        client = self._make_client([pr])
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert entries == []
+        excluded_prs = [e['number'] for e in diag['excluded'] if e.get('type') == 'pr']
+        assert 53 in excluded_prs
+
+    def test_hotfix_pr_number_in_prs_covered(self):
+        """Scenario: HOTFIX PR number appears in prs_covered"""
+        pr = _make_pr(54, merged_at='2026-10-04T10:00:00Z', body='',
+                      title='Security hotfix')
+        client = self._make_client([pr])
+        _, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert 54 in diag['prs_covered']
+
+    def test_issue_linked_prs_not_treated_as_hotfix(self):
+        """Scenario: Existing issue-linked entry path is unchanged"""
+        pr = _make_pr(55, merged_at='2026-10-04T10:00:00Z', body='Closes #7',
+                      title='Linked PR')
+
+        client = MagicMock()
+
+        def get_side_effect(path):
+            if '/pulls?' in path:
+                m = re.search(r'[?&]page=(\d+)', path)
+                page = int(m.group(1)) if m else 1
+                if page == 1:
+                    return [pr]
+                return []
+            if '/issues/7' in path:
+                return _make_issue(7, title='Real issue',
+                                   labels=['classification: bug'],
+                                   body='### Release Notes\n\nFix.')
+            raise ValueError(f'Unexpected path: {path}')
+
+        client.get.side_effect = get_side_effect
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        issue_entries = [e for e in entries if e['category'] != 'HOTFIX']
+        hotfix_entries = [e for e in entries if e['category'] == 'HOTFIX']
+        assert len(issue_entries) == 1
+        assert issue_entries[0]['issue_number'] == 7
+        assert hotfix_entries == []
+
+    def test_cross_repo_ref_only_pr_not_treated_as_hotfix(self):
+        """A PR with cross-repo closing refs has a linked issue; it is not a HOTFIX."""
+        pr = _make_pr(56, merged_at='2026-10-04T10:00:00Z',
+                      body='Closes other/repo#99', title='Cross-repo only')
+        client = self._make_client([pr])
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        hotfix_entries = [e for e in entries if e['category'] == 'HOTFIX']
+        assert hotfix_entries == []
+        assert any(d['ref'] == 'other/repo#99' for d in diag['cross_repo_refs'])
+
+    def test_hotfix_entry_uses_pr_body_release_notes_section(self):
+        """Scenario (issue #686): HOTFIX entry uses PR body Release Notes section when present."""
+        body = '### Release Notes\n\nEmergency patch deployed successfully.\n\n### Details\n\nMore info.'
+        pr = _make_pr(60, merged_at='2026-10-04T10:00:00Z',
+                      body=body, title='PR title that should not appear')
+        client = self._make_client([pr])
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry['category'] == 'HOTFIX'
+        assert entry['release_notes'] == 'Emergency patch deployed successfully.'
+        assert entry['pr_title'] == 'PR title that should not appear'
+
+    def test_hotfix_entry_falls_back_to_pr_title_when_no_release_notes_section(self):
+        """Scenario (issue #686): HOTFIX entry falls back to PR title when body has no Release Notes section."""
+        body = '## Summary\n\nFixed a critical bug.\n\n## Details\n\nNo release notes heading here.'
+        pr = _make_pr(61, merged_at='2026-10-04T10:00:00Z',
+                      body=body, title='Critical bug fix')
+        client = self._make_client([pr])
+        entries, _, _ = collate(client, 'owner/repo', _START, _END)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry['category'] == 'HOTFIX'
+        assert entry['release_notes'] is None
+        assert entry['pr_title'] == 'Critical bug fix'
+
+
+# ---------------------------------------------------------------------------
+# render_markdown -- HOTFIX (issue #685)
+# ---------------------------------------------------------------------------
+
+class TestRenderMarkdownHotfix:
+    """Realises render_markdown Gherkin scenarios from issue #685.
+
+    Scenario: HOTFIX section is ordered immediately after Security
+    Scenario: render_markdown renders HOTFIX entry using PR-sourced fields
+    """
+
+    def _issue_entry(self, number, category, title, url, release_notes):
+        return {
+            'issue_number': number,
+            'issue_title': title,
+            'issue_url': url,
+            'category': category,
+            'release_notes': release_notes,
+            'pr_title': '',
+            'pr_numbers': [number + 100],
+            'reopened': False,
+        }
+
+    def test_hotfix_section_after_security(self):
+        """Scenario: HOTFIX section is ordered immediately after Security"""
+        entries = [
+            self._issue_entry(1, 'Security', 'Sec issue', 'u1', 'sec fix'),
+            _hotfix_entry(200, 'Hotfix PR', 'https://github.com/o/r/pull/200'),
+        ]
+        md = render_markdown(entries, _START, _END, 'owner/repo')
+        sec_pos = md.index('## Security')
+        hotfix_pos = md.index('## HOTFIX')
+        assert sec_pos < hotfix_pos
+
+    def test_hotfix_rendered_with_pr_title_and_url(self):
+        """Scenario: render_markdown renders HOTFIX entry using PR-sourced fields"""
+        entry = _hotfix_entry(
+            201, 'Emergency fix', 'https://github.com/o/r/pull/201'
+        )
+        md = render_markdown([entry], _START, _END, 'owner/repo')
+        assert 'Emergency fix' in md
+        assert 'https://github.com/o/r/pull/201' in md
+        assert '## HOTFIX' in md
+
+    def test_hotfix_does_not_require_issue_fields(self):
+        entry = _hotfix_entry(
+            202, 'Patch', 'https://github.com/o/r/pull/202'
+        )
+        md = render_markdown([entry], _START, _END, 'owner/repo')
+        assert 'None' not in md
+
+    def test_hotfix_entries_sorted_by_pr_number(self):
+        entries = [
+            _hotfix_entry(300, 'Third', 'u300'),
+            _hotfix_entry(100, 'First', 'u100'),
+            _hotfix_entry(200, 'Second', 'u200'),
+        ]
+        md = render_markdown(entries, _START, _END, 'owner/repo')
+        pos100 = md.index('First')
+        pos200 = md.index('Second')
+        pos300 = md.index('Third')
+        assert pos100 < pos200 < pos300
+
+    def test_hotfix_no_release_notes_uses_pr_title_as_prose(self):
+        """RV-001: HOTFIX with release_notes=None falls back to pr_title as prose body."""
+        entry = _hotfix_entry(203, 'Fix critical outage', 'https://github.com/o/r/pull/203')
+        md = render_markdown([entry], _START, _END, 'owner/repo')
+        heading_pos = md.index('### [Fix critical outage]')
+        prose_pos = md.index('Fix critical outage', heading_pos + len('### [Fix critical outage]'))
+        assert prose_pos > heading_pos
+
+    def test_hotfix_with_release_notes_renders_prose(self):
+        """RV-002: HOTFIX with non-None release_notes renders the release_notes text as body prose."""
+        entry = {
+            'issue_number': None,
+            'issue_title': None,
+            'issue_url': None,
+            'category': 'HOTFIX',
+            'release_notes': 'Emergency patch deployed successfully.',
+            'pr_title': 'Some PR title',
+            'pr_url': 'https://github.com/o/r/pull/204',
+            'pr_numbers': [204],
+            'reopened': False,
+        }
+        md = render_markdown([entry], _START, _END, 'owner/repo')
+        assert 'Emergency patch deployed successfully.' in md
+        # release_notes text should appear as a standalone body line, not just inside the heading link
+        assert '\nEmergency patch deployed successfully.\n' in md
+
+
+# ---------------------------------------------------------------------------
 # render_markdown
 # ---------------------------------------------------------------------------
 
@@ -531,6 +776,7 @@ class TestRenderMarkdown:
             self._entry(3, 'Fixes',       'F', 'u3', 'x'),
             self._entry(4, 'Features',    'E', 'u4', 'x'),
             self._entry(5, 'Security',    'S', 'u5', 'x'),
+            _hotfix_entry(200, 'Hotfix PR', 'https://github.com/owner/repo/pull/200'),
         ]
         md = render_markdown(entries, _START, _END, 'owner/repo')
         positions = {cat: md.index(f'## {cat}') for cat in CATEGORY_ORDER
