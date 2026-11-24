@@ -240,7 +240,8 @@ def collate(client, repo, start, end):
         excluded_present = EXCLUDED_LABELS & (set(issue_labels) | all_pr_labels)
         if excluded_present:
             diagnostics['excluded'].append({
-                'issue': issue_num,
+                'type': 'issue',
+                'number': issue_num,
                 'url': issue['html_url'],
                 'reason': f'label: {", ".join(sorted(excluded_present))}',
             })
@@ -253,7 +254,8 @@ def collate(client, repo, start, end):
         if parent_label:
             parent_num = parent_label[len(PARENT_ISSUE_LABEL_PREFIX):]
             diagnostics['excluded'].append({
-                'issue': issue_num,
+                'type': 'issue',
+                'number': issue_num,
                 'url': issue['html_url'],
                 'reason': f'sub-issue of #{parent_num}',
             })
@@ -299,7 +301,8 @@ def collate(client, repo, start, end):
         excluded_present = EXCLUDED_LABELS & pr_labels
         if excluded_present:
             diagnostics['excluded'].append({
-                'pr': pr['number'],
+                'type': 'pr',
+                'number': pr['number'],
                 'url': pr.get('html_url', ''),
                 'reason': f'label: {", ".join(sorted(excluded_present))}',
             })
@@ -358,7 +361,7 @@ def render_markdown(entries, start, end, repo):
                 link_title = entry['pr_title']
                 link_url = entry.get('pr_url', '')
                 suffix = ''
-                prose = entry['release_notes']
+                prose = entry['release_notes'] if entry['release_notes'] is not None else entry['pr_title']
             else:
                 link_title = entry['issue_title']
                 link_url = entry['issue_url']

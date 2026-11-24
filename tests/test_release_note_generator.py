@@ -358,7 +358,7 @@ class TestCollate:
         client = self._make_client([pr], {5: issue5})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 5 for e in diag['excluded'])
+        assert any(e['number'] == 5 for e in diag['excluded'])
 
     def test_excluded_label_ignore_for_release(self):
         pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5')
@@ -366,7 +366,7 @@ class TestCollate:
         client = self._make_client([pr], {5: issue5})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 5 for e in diag['excluded'])
+        assert any(e['number'] == 5 for e in diag['excluded'])
 
     def test_sub_issue_excluded_from_release_notes(self):
         """Scenario R1: sub-issue carrying parent-issue: label is excluded."""
@@ -376,7 +376,7 @@ class TestCollate:
         client = self._make_client([pr], {614: issue614})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 614 for e in diag['excluded'])
+        assert any(e['number'] == 614 for e in diag['excluded'])
 
     def test_parent_epic_not_excluded(self):
         """Scenario R2: parent epic (no parent-issue: label) appears normally."""
@@ -386,7 +386,7 @@ class TestCollate:
         client = self._make_client([pr], {608: issue608})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert any(e['issue_number'] == 608 for e in entries)
-        assert not any(e['issue'] == 608 for e in diag['excluded'])
+        assert not any(e['number'] == 608 for e in diag['excluded'])
 
     def test_sub_issue_excluded_reason_in_diagnostics(self):
         """Scenario R3: diagnostics[excluded] contains reason 'sub-issue of #608'."""
@@ -395,7 +395,7 @@ class TestCollate:
                                body='### Release Notes\n\nSub work.')
         client = self._make_client([pr], {614: issue614})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
-        excluded_entry = next((e for e in diag['excluded'] if e['issue'] == 614), None)
+        excluded_entry = next((e for e in diag['excluded'] if e['number'] == 614), None)
         assert excluded_entry is not None
         assert excluded_entry['reason'] == 'sub-issue of #608'
 
@@ -408,7 +408,7 @@ class TestCollate:
         client = self._make_client([pr], {5: issue5})
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        assert any(e['issue'] == 5 for e in diag['excluded'])
+        assert any(e['number'] == 5 for e in diag['excluded'])
 
     def test_reopened_issue_emits_diagnostic(self):
         pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5')
@@ -552,7 +552,7 @@ class TestCollateHotfix:
         client = self._make_client([pr])
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        excluded_prs = [e['pr'] for e in diag['excluded'] if 'pr' in e]
+        excluded_prs = [e['number'] for e in diag['excluded'] if e.get('type') == 'pr']
         assert 52 in excluded_prs
 
     def test_hotfix_candidate_excluded_by_ignore_for_release_label(self):
@@ -561,7 +561,7 @@ class TestCollateHotfix:
         client = self._make_client([pr])
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
-        excluded_prs = [e['pr'] for e in diag['excluded'] if 'pr' in e]
+        excluded_prs = [e['number'] for e in diag['excluded'] if e.get('type') == 'pr']
         assert 53 in excluded_prs
 
     def test_hotfix_pr_number_in_prs_covered(self):
@@ -699,6 +699,32 @@ class TestRenderMarkdownHotfix:
         pos200 = md.index('Second')
         pos300 = md.index('Third')
         assert pos100 < pos200 < pos300
+
+    def test_hotfix_no_release_notes_uses_pr_title_as_prose(self):
+        """RV-001: HOTFIX with release_notes=None falls back to pr_title as prose body."""
+        entry = _hotfix_entry(203, 'Fix critical outage', 'https://github.com/o/r/pull/203')
+        md = render_markdown([entry], _START, _END, 'owner/repo')
+        heading_pos = md.index('### [Fix critical outage]')
+        prose_pos = md.index('Fix critical outage', heading_pos + len('### [Fix critical outage]'))
+        assert prose_pos > heading_pos
+
+    def test_hotfix_with_release_notes_renders_prose(self):
+        """RV-002: HOTFIX with non-None release_notes renders the release_notes text as body prose."""
+        entry = {
+            'issue_number': None,
+            'issue_title': None,
+            'issue_url': None,
+            'category': 'HOTFIX',
+            'release_notes': 'Emergency patch deployed successfully.',
+            'pr_title': 'Some PR title',
+            'pr_url': 'https://github.com/o/r/pull/204',
+            'pr_numbers': [204],
+            'reopened': False,
+        }
+        md = render_markdown([entry], _START, _END, 'owner/repo')
+        assert 'Emergency patch deployed successfully.' in md
+        # release_notes text should appear as a standalone body line, not just inside the heading link
+        assert '\nEmergency patch deployed successfully.\n' in md
 
 
 # ---------------------------------------------------------------------------
