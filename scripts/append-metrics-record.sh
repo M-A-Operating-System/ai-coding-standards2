@@ -69,9 +69,6 @@ export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
 export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
 
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    # Remove any extraHeader actions/checkout wrote into .git/config to avoid
-    # interference with the url.insteadOf rewrite below.
-    git config --local --unset-all "http.https://github.com/.extraHeader" 2>/dev/null || true
     export GIT_CONFIG_COUNT=1
     export GIT_CONFIG_KEY_0="url.https://x-access-token:${GITHUB_TOKEN}@github.com/.insteadOf"
     export GIT_CONFIG_VALUE_0="https://github.com/"

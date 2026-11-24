@@ -236,10 +236,14 @@ def read_aggregate_records() -> list:
     the file does not, or when no aggregate rows are present.  A git fetch
     failure propagates as CalledProcessError (fail-closed, STD-ARCH-014).
     """
-    subprocess.run(
+    _fetch = subprocess.run(
         ["git", "fetch", "origin", METRICS_BRANCH],
-        check=True, capture_output=True,
+        capture_output=True,
     )
+    if _fetch.returncode != 0:
+        raise RuntimeError(
+            "git fetch failed: " + _fetch.stderr.decode(errors="replace").strip()
+        )
     show = subprocess.run(
         ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
         capture_output=True, text=True,

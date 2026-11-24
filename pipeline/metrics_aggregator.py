@@ -104,10 +104,14 @@ def read_records() -> list:
     couple a scheduled script's behavior to an 8000+ line module it has no
     other reason to depend on.
     """
-    subprocess.run(
+    _fetch = subprocess.run(
         ["git", "fetch", "origin", METRICS_BRANCH],
-        check=True, capture_output=True,
+        capture_output=True,
     )
+    if _fetch.returncode != 0:
+        raise RuntimeError(
+            "git fetch failed: " + _fetch.stderr.decode(errors="replace").strip()
+        )
     show = subprocess.run(
         ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
         capture_output=True, text=True,
