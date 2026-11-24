@@ -39,3 +39,13 @@
 **Given** the url.insteadOf authentication fix is merged to the main branch
 **When** the next weekly-release scheduled run executes
 **Then** a GitHub Release is published, closing the gap that has existed since 2026-10-23
+
+## Scenario: metrics-aggregation flow completes after a step record is appended in a private repository
+**Given** a private repository with the orchestrator installed, `actions/checkout` has persisted a credential in `.git/config`, and the `ai-agile/metrics` branch exists
+**When** a scheduled orchestrator run appends a step record via `append-metrics-record.sh` and then executes the `metrics-aggregation` flow
+**Then** `metrics_aggregator.py` successfully fetches `ai-agile/metrics`, appends a `period=week` aggregate row, and the flow exits with `AI_AGILE_STATUS: complete`
+
+## Scenario: append-metrics-record.sh preserves the git checkout credential when GITHUB_TOKEN is set
+**Given** a repository where `actions/checkout` has written `http.https://github.com/.extraHeader` into `.git/config` and `GITHUB_TOKEN` is set in the environment
+**When** `scripts/append-metrics-record.sh` runs
+**Then** `http.https://github.com/.extraHeader` remains present in `.git/config`
