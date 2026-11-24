@@ -41,11 +41,14 @@ _CLOSING_RE = re.compile(
 )
 
 _RELEASE_NOTES_RE = re.compile(
-    r'###\s+Release\s+Notes[ \t]*\n(.*?)(?=\n###|\Z)',
+    r'###\s+Release\s+Notes[ \t]*\n(.*?)(?=\n#{1,3}\s|\Z)',
     re.DOTALL | re.IGNORECASE,
 )
 
 EXCLUDED_LABELS = frozenset({'dependencies', 'ignore-for-release'})
+
+# Mirror of pipeline_orchestrator.PARENT_ISSUE_LABEL_PREFIX; keep in sync.
+PARENT_ISSUE_LABEL_PREFIX = "parent-issue:"
 
 _CATEGORY_MAP = {
     'classification: security':    'Security',
@@ -240,6 +243,19 @@ def collate(client, repo, start, end):
                 'issue': issue_num,
                 'url': issue['html_url'],
                 'reason': f'label: {", ".join(sorted(excluded_present))}',
+            })
+            continue
+
+        parent_label = next(
+            (lbl for lbl in issue_labels if lbl.startswith(PARENT_ISSUE_LABEL_PREFIX)),
+            None,
+        )
+        if parent_label:
+            parent_num = parent_label[len(PARENT_ISSUE_LABEL_PREFIX):]
+            diagnostics['excluded'].append({
+                'issue': issue_num,
+                'url': issue['html_url'],
+                'reason': f'sub-issue of #{parent_num}',
             })
             continue
 

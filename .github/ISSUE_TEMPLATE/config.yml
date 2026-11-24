@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and feedback
+    url: https://github.com/M-A-Operating-System/ai-coding-standards2/discussions
+    about: Ask questions, share feedback, or propose ideas before opening an issue.

@@ -97,6 +97,8 @@ def _flow_trigger(flow):
     trig = flow.get("trigger") or {}
     if "schedule" in trig:
         return f"schedule `{trig['schedule']}`"
+    if "event" in trig:
+        return f"event `{trig['event']}`"
     parts = [f"kind `{trig.get('kind')}`"]
     if trig.get("type"):
         parts.append("type " + ", ".join(f"`{t}`" for t in trig["type"]))

@@ -299,3 +299,18 @@ Weekly release flow (issue #604). Fires on the weekly Wednesday cadence and supp
 - **Script:** `scripts/run-release-flow.sh`
 
 Determines the previous published release boundary and discovers merged PRs and closed issues since that boundary. Applies gates: exits with a structured no-change outcome when nothing is new; skips with a structured skipped outcome when the computed tag already exists; records a gate-failed outcome when the coverage threshold is not met. Otherwise generates release-notes Markdown via release_note_generator.py and creates a GitHub Release. All outcomes are recorded as structured JSON to stderr.
+
+## Flow: `patch-tag`
+
+- **Applies to:** event `pull_request.closed`
+- **Naming:** --
+
+Per-PR PATCH tag flow (issue #694). Fires when a PR is merged to main via the orchestrator's pull_request.closed (merged) signal. Runs scripts/push-patch-tag.sh to bump the PATCH version and push a vX.Y.Z annotated tag. The legacy release-patch-tag.yml GitHub Actions workflow was removed once this step was verified on a real merge (issue #695); this is now the sole PATCH-tagging mechanism.
+
+### `05_continuous/pr/patch-tag`
+
+- **Kind:** script
+- **Phase:** `05_continuous`
+- **Script:** `scripts/push-patch-tag.sh`
+
+Bumps the PATCH version and pushes an annotated vX.Y.Z tag when a PR is merged to main. Idempotent: skips if HEAD is already tagged. Uses the GitHub API (not local git) so it runs correctly from the orchestrator's checkout of main.

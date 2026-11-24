@@ -1198,3 +1198,130 @@ class TestClassificationField:
         assert isinstance(field_type, list)
         assert "string" in field_type
         assert "null" in field_type
+
+
+# ---------------------------------------------------------------------------
+# TestScheduleClaimTokenPropagation -- issue #711
+# ---------------------------------------------------------------------------
+
+class TestScheduleClaimTokenPropagation:
+    """GITHUB_TOKEN reaches the subprocess env in the claim_schedule/append path.
+
+    Regression for issue #711: every scheduled-flow claim failed with
+    'fatal: could not read Username for https://github.com' at git push
+    because append-metrics-record.sh's auth-header block never ran.
+    The auth block runs only when GITHUB_TOKEN is non-empty; these tests
+    verify that GITHUB_TOKEN (and GH_TOKEN) from os.environ reach the
+    subprocess env even when AI_AGILE_BOT_TOKEN is absent (the typical
+    headless run configuration).
+
+    The tests call _append_metrics_record directly via the imported reference
+    rather than through claim_schedule so the conftest no_real_metrics_push
+    fixture (which replaces po._append_metrics_record via monkeypatch) does
+    not shadow the function under test -- the direct reference bypasses the
+    module-attribute replacement, in line with the conftest comment.
+    """
+
+    def _capture_subprocess_env(self, env_overrides):
+        """Run _append_metrics_record with a controlled environ, return subprocess envs."""
+        script_envs = []
+
+        def fake_run(cmd, **kwargs):
+            if "env" in kwargs:
+                script_envs.append(kwargs["env"])
+            r = MagicMock()
+            r.returncode = 0
+            r.stdout = ""
+            r.stderr = ""
+            return r
+
+        record = {"agent_id": "schedule", "event": "schedule.claim", "github_issue_number": None}
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=fake_run), \
+             patch.dict("pipeline_orchestrator.os.environ", env_overrides, clear=True):
+            _append_metrics_record(None, "owner/repo", record)
+
+        return script_envs
+
+    def test_github_token_in_subprocess_env_with_bot_token_absent(self):
+        """Given GITHUB_TOKEN set and AI_AGILE_BOT_TOKEN absent,
+        GITHUB_TOKEN is present in the subprocess env passed to
+        append-metrics-record.sh (the headless scheduled-run configuration).
+        """
+        test_token = "ghs_scheduled_flow_token_xyz"
+        envs = self._capture_subprocess_env({
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/root"),
+            "GITHUB_TOKEN": test_token,
+            "GH_TOKEN": test_token,
+            # AI_AGILE_BOT_TOKEN absent -- simulates an unconfigured PAT secret
+        })
+
+        assert len(envs) == 1, "append-metrics-record.sh must be called exactly once"
+        env = envs[0]
+        assert "GITHUB_TOKEN" in env, (
+            "GITHUB_TOKEN must be in the subprocess env so append-metrics-record.sh "
+            "can build the git Authorization header for git push"
+        )
+        assert env["GITHUB_TOKEN"] == test_token
+        # STD-SEC-022: the orchestrator's own GIT_CONFIG auth header must not be forwarded
+        assert "GIT_CONFIG_COUNT" not in env
+        assert "GIT_CONFIG_VALUE_0" not in env
+
+    def test_gh_token_also_propagates_when_github_token_absent(self):
+        """GH_TOKEN propagates when GITHUB_TOKEN is absent -- lib/github-identity.sh
+        copies GH_TOKEN -> GITHUB_TOKEN, so having either is sufficient.
+        """
+        test_token = "ghs_gh_token_only_xyz"
+        envs = self._capture_subprocess_env({
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/root"),
+            "GH_TOKEN": test_token,
+            # GITHUB_TOKEN and AI_AGILE_BOT_TOKEN both absent
+        })
+
+        assert len(envs) == 1
+        env = envs[0]
+        assert "GH_TOKEN" in env
+        assert env["GH_TOKEN"] == test_token
+
+    def test_github_token_absent_from_environ_still_reaches_subprocess_via_gh_token(self):
+        """Regression for issue #711's actual failure: GITHUB_TOKEN/GH_TOKEN
+        absent from os.environ (reproducing the real scheduled-run failure
+        -- 'fatal: could not read Username') must not leave the subprocess
+        without a credential when a real GitHubClient is available. gh.token
+        is the fix: it is injected into the subprocess env regardless of
+        what os.environ carries.
+        """
+        test_token = "ghs_client_token_not_in_environ"
+        script_envs = []
+
+        def fake_run(cmd, **kwargs):
+            if "env" in kwargs:
+                script_envs.append(kwargs["env"])
+            r = MagicMock()
+            r.returncode = 0
+            r.stdout = ""
+            r.stderr = ""
+            return r
+
+        fake_gh = MagicMock()
+        fake_gh.token = test_token
+
+        record = {"agent_id": "schedule", "event": "schedule.claim", "github_issue_number": None}
+        env_overrides = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/root"),
+            # GITHUB_TOKEN, GH_TOKEN, AI_AGILE_BOT_TOKEN all absent from
+            # os.environ -- the exact condition observed in the failing run.
+        }
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=fake_run), \
+             patch.dict("pipeline_orchestrator.os.environ", env_overrides, clear=True):
+            _append_metrics_record(fake_gh, "owner/repo", record)
+
+        assert len(script_envs) == 1
+        env = script_envs[0]
+        assert env.get("GITHUB_TOKEN") == test_token, (
+            "GITHUB_TOKEN must come from gh.token when absent from os.environ, "
+            "so append-metrics-record.sh's git push never fails for lack of a credential"
+        )
+        assert env.get("GH_TOKEN") == test_token

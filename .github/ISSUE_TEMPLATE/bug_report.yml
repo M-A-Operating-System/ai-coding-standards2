@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in the pipeline or its scripts doesn't work as documented.
+labels: ["classification: bug"]
+body:
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem statement
+      description: What's broken, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >
+        Where you saw this: target repo and commit/version of this repo,
+        the consuming repo (if different), runner, trigger (schedule,
+        workflow_dispatch, PR), and any relevant config (.pipeline-stop
+        level, tokens set, etc).
+      placeholder: |
+        Target repository: M-A-Operating-System/ai-coding-standards2
+        Version observed: <commit SHA or tag>
+        Reported from: <consuming repo, if different>
+        Trigger: schedule | workflow_dispatch | PR
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or actions, in order.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the exact error message and a link to the failing run/log if you have one.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: How would we know this is fixed? A short checklist is fine.
+    validations:
+      required: true
+  - type: textarea
+    id: root-cause
+    attributes:
+      label: Suspected root cause (optional)
+      description: If you've already traced it to a file/line, say so here.
+    validations:
+      required: false

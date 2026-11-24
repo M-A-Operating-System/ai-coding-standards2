@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 from release_note_generator import (
     CATEGORY_ORDER,
     EXCLUDED_LABELS,
+    PARENT_ISSUE_LABEL_PREFIX,
     classify_issue,
     collate,
     collect_merged_prs,
@@ -169,6 +170,27 @@ class TestExtractReleaseNotesSection:
     def test_case_insensitive_heading(self):
         body = '### release notes\n\nsome prose\n'
         assert extract_release_notes_section(body) == 'some prose'
+
+    def test_stops_at_h2_section_heading(self):
+        """Scenario: Release notes extraction stops at a ## section heading (issue #704)."""
+        body = (
+            '### Release Notes\n\nShort summary.\n\n'
+            '## Problem Statement\n\nLong problem text.'
+        )
+        result = extract_release_notes_section(body)
+        assert result == 'Short summary.'
+        assert 'Problem Statement' not in result
+        assert 'Long problem text.' not in result
+
+    def test_stops_at_h3_heading(self):
+        """Scenario: Release notes extraction still stops at the next ### heading (issue #704)."""
+        body = (
+            '### Release Notes\n\nShort summary.\n\n'
+            '### Next Section\n\nOther content.'
+        )
+        result = extract_release_notes_section(body)
+        assert result == 'Short summary.'
+        assert 'Other content.' not in result
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +367,37 @@ class TestCollate:
         entries, diag, _ = collate(client, 'owner/repo', _START, _END)
         assert entries == []
         assert any(e['issue'] == 5 for e in diag['excluded'])
+
+    def test_sub_issue_excluded_from_release_notes(self):
+        """Scenario R1: sub-issue carrying parent-issue: label is excluded."""
+        pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #614')
+        issue614 = _make_issue(614, labels=['parent-issue:608', 'classification: bug'],
+                               body='### Release Notes\n\nSub work.')
+        client = self._make_client([pr], {614: issue614})
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert entries == []
+        assert any(e['issue'] == 614 for e in diag['excluded'])
+
+    def test_parent_epic_not_excluded(self):
+        """Scenario R2: parent epic (no parent-issue: label) appears normally."""
+        pr = _make_pr(20, merged_at='2026-10-02T10:00:00Z', body='Closes #608')
+        issue608 = _make_issue(608, labels=['classification: enhancement'],
+                               body='### Release Notes\n\nEpic work.')
+        client = self._make_client([pr], {608: issue608})
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert any(e['issue_number'] == 608 for e in entries)
+        assert not any(e['issue'] == 608 for e in diag['excluded'])
+
+    def test_sub_issue_excluded_reason_in_diagnostics(self):
+        """Scenario R3: diagnostics[excluded] contains reason 'sub-issue of #608'."""
+        pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #614')
+        issue614 = _make_issue(614, labels=['parent-issue:608'],
+                               body='### Release Notes\n\nSub work.')
+        client = self._make_client([pr], {614: issue614})
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        excluded_entry = next((e for e in diag['excluded'] if e['issue'] == 614), None)
+        assert excluded_entry is not None
+        assert excluded_entry['reason'] == 'sub-issue of #608'
 
     def test_excluded_label_on_closing_pr_filters_issue_without_the_label(self):
         """A PR carrying ignore-for-release excludes the issue it closes even

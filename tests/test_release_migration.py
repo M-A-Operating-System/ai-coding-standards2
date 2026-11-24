@@ -4,64 +4,40 @@ Covers:
 - Scenario R2: Production release ownership transferred to orchestrator after
   parity confirmed -- the weekly-release flow in pipeline.json owns the
   scheduled release, not release.yml.
-- Scenario R3: Existing Wednesday workflow no longer independently publishes
-  releases -- release.yml no longer carries a schedule trigger.
 - Scenario R4: Migration documentation is present and accessible.
-- Scenario R5: Manual dispatch and retry continue to function -- release.yml
-  retains workflow_dispatch and push:tags:v* triggers.
+
+release.yml itself was removed in issue #695 -- its manual-dispatch and
+off-cycle tag-push triggers (R3/R5) were retired along with the file, not
+retained, so the scenarios that once asserted on its 'on:' block no longer
+apply.
 """
 
 import re
 from pathlib import Path
 
-import yaml
 import pytest
 
 _REPO_ROOT = Path(__file__).parent.parent
 _RELEASE_YML = _REPO_ROOT / ".github" / "workflows" / "release.yml"
+_RELEASE_PATCH_TAG_YML = _REPO_ROOT / ".github" / "workflows" / "release-patch-tag.yml"
 _PIPELINE_JSON = _REPO_ROOT / "pipeline" / "pipeline.json"
 _MIGRATION_DOC = _REPO_ROOT / "docs" / "product" / "orchestrator" / "release-migration.md"
 
 
-# ---------------------------------------------------------------------------
-# Scenario R3: existing Wednesday workflow no longer independently publishes
-# ---------------------------------------------------------------------------
-
-def _release_yml_on():
-    """Return the 'on:' block from release.yml.
-
-    PyYAML parses 'on:' as the boolean key True (YAML 1.1 quirk), so we
-    look for both True and the string 'on'.
-    """
-    with open(_RELEASE_YML) as f:
-        doc = yaml.safe_load(f)
-    return doc.get(True) or doc.get("on") or {}
+def test_release_yml_removed():
+    """release.yml (and its triggers) is retired, not merely narrowed (issue #695)."""
+    assert not _RELEASE_YML.exists(), (
+        "release.yml should have been deleted in issue #695's workflow-removal cutover."
+    )
 
 
-class TestReleaseYmlRetired:
-    def test_schedule_trigger_removed(self):
-        """Scenario R3: release.yml must not have a schedule trigger."""
-        on = _release_yml_on()
-        assert "schedule" not in on, (
-            "release.yml still carries a schedule trigger; it must be removed "
-            "after cutover to the orchestrator-owned weekly-release flow."
-        )
-
-    def test_workflow_dispatch_retained(self):
-        """Scenario R5: emergency manual dispatch must still be available."""
-        on = _release_yml_on()
-        assert "workflow_dispatch" in on, (
-            "release.yml must retain workflow_dispatch for emergency manual releases."
-        )
-
-    def test_push_tags_trigger_retained(self):
-        """Scenario R5: off-cycle tag-push releases must still work."""
-        on = _release_yml_on()
-        push = on.get("push") or {}
-        tags = push.get("tags") or []
-        assert any("v*" in t for t in tags), (
-            "release.yml must retain push:tags:v* for off-cycle releases."
-        )
+def test_release_patch_tag_yml_removed():
+    """release-patch-tag.yml is retired now that 05_continuous/pr/patch-tag
+    (issue #694) owns PATCH tagging."""
+    assert not _RELEASE_PATCH_TAG_YML.exists(), (
+        "release-patch-tag.yml should have been deleted in issue #695's "
+        "workflow-removal cutover."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +80,40 @@ class TestOrchestratorOwnsProduction:
             f"weekly-release script {script_path!r} not found at {_REPO_ROOT / script_path}"
         )
 
+    def test_patch_tag_flow_in_pipeline(self):
+        """Scenario R3: the orchestrator must own a patch-tag flow (issue #694)."""
+        import json
+        with open(_PIPELINE_JSON) as f:
+            pipeline = json.load(f)
+        flows = pipeline.get("flows", {})
+        assert "patch-tag" in flows, (
+            "patch-tag flow not found in pipeline.json; the orchestrator "
+            "must own PATCH tagging after release-patch-tag.yml's removal."
+        )
+
+    def test_patch_tag_flow_has_pull_request_event_trigger(self):
+        """Scenario R3: the patch-tag flow must fire on a merged pull request."""
+        import json
+        with open(_PIPELINE_JSON) as f:
+            pipeline = json.load(f)
+        trigger = pipeline["flows"]["patch-tag"].get("trigger", {})
+        assert trigger.get("event") == "pull_request.closed", (
+            "patch-tag flow trigger must declare event: pull_request.closed."
+        )
+
+    def test_patch_tag_script_exists(self):
+        """Scenario R3: the script invoked by the patch-tag flow must exist."""
+        import json
+        with open(_PIPELINE_JSON) as f:
+            pipeline = json.load(f)
+        steps = pipeline["flows"]["patch-tag"].get("steps", [])
+        assert steps, "patch-tag flow must have at least one step."
+        script_path = steps[0].get("script")
+        assert script_path, "patch-tag step must declare a script path."
+        assert (_REPO_ROOT / script_path).exists(), (
+            f"patch-tag script {script_path!r} not found at {_REPO_ROOT / script_path}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Scenario R4: migration documentation is present and accessible
@@ -125,7 +135,7 @@ class TestMigrationDocumentation:
         )
 
     def test_migration_doc_describes_manual_dispatch(self):
-        """Scenario R4/R5: migration doc must describe how to manually trigger the flow."""
+        """Scenario R4: migration doc must describe how to manually trigger the flow."""
         text = _MIGRATION_DOC.read_text()
         assert "dispatch" in text.lower() or "manual" in text.lower(), (
             "migration documentation must describe manual dispatch/retry."

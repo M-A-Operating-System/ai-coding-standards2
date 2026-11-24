@@ -713,9 +713,12 @@ class TestReadRecordsFailsClosed:
     indistinguishable from a legitimately quiet week."""
 
     def test_fetch_failure_raises_rather_than_returning_empty(self):
-        with patch("metrics_aggregator.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.CalledProcessError(1, ["git", "fetch"])
-            with pytest.raises(subprocess.CalledProcessError):
+        fetch_result = subprocess.CompletedProcess(
+            args=["git", "fetch"], returncode=128, stdout=b"",
+            stderr=b"fatal: could not read Username for 'https://github.com'",
+        )
+        with patch("metrics_aggregator.subprocess.run", return_value=fetch_result):
+            with pytest.raises(RuntimeError):
                 read_records()
 
     def test_missing_file_on_an_existing_branch_returns_empty(self):

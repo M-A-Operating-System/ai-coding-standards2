@@ -69,8 +69,11 @@ PR_JSON=$(gh api "repos/${REPO}/pulls/${PR}" 2>/dev/null) || {
   read -r MERGEABLE
   read -r BRANCH
   read -r CROSS
+  read -r BASE_REF
+  read -r BASE_DEFAULT_BRANCH
+  read -r CLOSE_NUMBERS
 } < <(printf '%s' "${PR_JSON}" | python3 -c "
-import sys, json
+import sys, json, re
 d = json.load(sys.stdin)
 # REST returns a lowercase state ('open'/'closed'); upper-case it so the
 # downstream comparisons ('OPEN') are preserved unchanged.
@@ -83,6 +86,19 @@ print(d['head']['ref'])
 head_repo = (d.get('head') or {}).get('repo') or {}
 base_repo = (d.get('base') or {}).get('repo') or {}
 print(str(head_repo.get('full_name') != base_repo.get('full_name')).lower())
+# The base branch and the repo's default branch -- GitHub's own 'Closes #N'
+# keyword only auto-closes the referenced issue when the PR merges into the
+# *default* branch (never on a merge into any other branch, e.g. a parent
+# epic's shared integration branch, naming.base 'issue-{parent_number}').
+# base.repo is a full repository projection on the REST pull response, so
+# this needs no extra API call.
+print((d.get('base') or {}).get('ref', ''))
+print(base_repo.get('default_branch', ''))
+# Every issue this PR's body says it closes, via any of GitHub's recognised
+# closing keywords -- deduplicated, first-seen order.
+body = d.get('body') or ''
+nums = re.findall(r'(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)', body)
+print(' '.join(dict.fromkeys(nums)))
 ")
 
 # --- Let mergeability settle -----------------------------------------------
@@ -108,6 +124,33 @@ elif [[ "${MERGEABLE}" == "dirty" ]]; then
   exit 1
 fi
 
+# --- Explicitly close any issue this PR's body says it closes, but only when
+# GitHub's own "Closes #N" keyword will not fire on its own: that keyword
+# auto-closes only on a merge into the repository's *default* branch. A PR
+# merging into any other branch (e.g. a decomposed parent epic's shared
+# integration branch) never triggers it, so the referenced issue -- and, if
+# it is itself an epic, every epic-completion trigger gated on that issue's
+# children being closed -- would otherwise stay open forever even though the
+# code has fully landed. Idempotent: closing an already-closed issue is a
+# no-op.
+_close_referenced_issues_if_needed() {
+  if [[ -z "${CLOSE_NUMBERS}" ]]; then
+    return 0
+  fi
+  if [[ -n "${BASE_DEFAULT_BRANCH}" && "${BASE_REF}" == "${BASE_DEFAULT_BRANCH}" ]]; then
+    # Merging into the default branch -- GitHub's own keyword already covers this.
+    return 0
+  fi
+  for _n in ${CLOSE_NUMBERS}; do
+    if gh api --method PATCH "repos/${REPO}/issues/${_n}" \
+         -f state=closed -f state_reason=completed >/dev/null 2>&1; then
+      echo "Closed #${_n} explicitly: PR #${PR} merged into '${BASE_REF}', not the default branch -- GitHub's Closes keyword only fires on a merge to the default branch."
+    else
+      echo "WARNING: could not close #${_n} after merging PR #${PR} into '${BASE_REF}'." >&2
+    fi
+  done
+}
+
 # --- Merge (unless already merged), deleting the branch ---------------------
 if [[ "${MERGED}" != "true" ]]; then
   # REST returns 405 if GitHub still deems the PR unmergeable (conflicts,
@@ -118,6 +161,7 @@ if [[ "${MERGED}" != "true" ]]; then
     echo "ERROR: PR #${PR} could not be merged (not mergeable -- conflicts or required checks). API said: ${MERGE_OUT}" >&2
     exit 1
   fi
+  _close_referenced_issues_if_needed
   # --delete-branch equivalent: only for a branch in THIS repo (skip forks);
   # best-effort ref deletion (may be blocked; must not fail the script).
   if [[ -n "${BRANCH}" && "${CROSS}" != "true" ]]; then
@@ -135,8 +179,9 @@ if [[ "${MERGED}" != "true" ]]; then
   exit 0
 fi
 
-# Already merged: ensure the head branch is gone (idempotent). Skip fork
-# branches (cross-repo) -- they live in the fork, not this repo.
+# Already merged: ensure the head branch is gone (idempotent), and that any
+# issue it was supposed to close (per the explicit-close rule above) still is.
+_close_referenced_issues_if_needed
 if [[ -n "${BRANCH}" && "${CROSS}" != "true" ]]; then
   if gh api --method DELETE "/repos/${REPO}/git/refs/heads/${BRANCH}" >/dev/null 2>&1; then
     echo "Deleted branch '${BRANCH}'."

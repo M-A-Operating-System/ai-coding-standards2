@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
 
 import pipeline_orchestrator as orch
 from pipeline_orchestrator import AgentDef, WorkItem, cron_matches, load_pipeline
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def _t(text: str) -> datetime:
@@ -273,14 +273,16 @@ class TestRunReleaseFlowNoChange:
 
     def test_no_change_when_no_prior_release(self, tmp_path):
         """When there is no prior release (404, real gh exits non-zero with
-        no stdout), epoch date is used and an empty PR/issue list still
-        triggers no-change."""
+        no stdout), the fallback window starts 7 days before the run, not
+        the Unix epoch, and an empty PR/issue list still triggers no-change."""
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": None,
             "pulls?state=closed": _NO_PULLS,
             "repos/org/repo/issues": _NO_ISSUES,
         })
+        before = datetime.now(timezone.utc)
         result = _run_script(tmp_path, fake_bin)
+        after = datetime.now(timezone.utc)
         assert result.returncode == 0
         assert "AI_AGILE_STATUS: complete" in result.stdout
         json_line = next(
@@ -291,6 +293,19 @@ class TestRunReleaseFlowNoChange:
         assert json_line is not None
         record = json.loads(json_line)
         assert record["outcome"] == "no-change"
+        last_date = datetime.fromisoformat(
+            record["last_release_date"].replace("Z", "+00:00")
+        )
+        assert last_date.year > 1970, (
+            f"last_release_date must not be the Unix epoch; got "
+            f"{record['last_release_date']!r}"
+        )
+        window_before = before - timedelta(days=7) - timedelta(minutes=1)
+        window_after = after - timedelta(days=7) + timedelta(minutes=1)
+        assert window_before <= last_date <= window_after, (
+            f"last_release_date {record['last_release_date']!r} is not within "
+            f"1 minute of 7 days before the run"
+        )
 
 
 class TestRunReleaseFlowPublish:
@@ -304,8 +319,8 @@ class TestRunReleaseFlowPublish:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            # git/refs/tags returns [] by default -> next tag v2.1.0
-            "releases/tags/v2.1.0": None,    # no duplicate
+            # git/refs/tags returns [] by default -> next tag v0.1.0
+            "releases/tags/v0.1.0": None,    # no duplicate
             "release create": "",             # publish succeeds
         })
         result = _run_script(tmp_path, fake_bin,
@@ -322,7 +337,7 @@ class TestRunReleaseFlowPublish:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            "releases/tags/v2.1.0": None,
+            "releases/tags/v0.1.0": None,
             "release create": "",
         })
         result = _run_script(tmp_path, fake_bin,
@@ -369,7 +384,7 @@ class TestRunReleaseFlowPublish:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _ONE_ISSUE,
-            "releases/tags/v2.1.0": None,
+            "releases/tags/v0.1.0": None,
             "release create": "",
         })
         result = _run_script(tmp_path, fake_bin,
@@ -400,7 +415,7 @@ class TestRunReleaseFlowGates:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            "releases/tags/v2.1.0": None,
+            "releases/tags/v0.1.0": None,
         })
         result = _run_script(tmp_path, fake_bin,
                              extra_env={"RELEASE_COVERAGE_THRESHOLD": "5"})
@@ -427,7 +442,7 @@ class TestRunReleaseFlowGates:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            "releases/tags/v2.1.0": None,
+            "releases/tags/v0.1.0": None,
         })
         result = _run_script(tmp_path, fake_bin,
                              extra_env={"RELEASE_COVERAGE_THRESHOLD": "not-a-number"})
@@ -479,8 +494,8 @@ class TestRunReleaseFlowGates:
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
             # The release for the computed tag already exists -> skipped
-            "releases/tags/v2.1.0": json.dumps(
-                {"tag_name": "v2.1.0", "published_at": "2026-10-28T09:00:00Z"}
+            "releases/tags/v0.1.0": json.dumps(
+                {"tag_name": "v0.1.0", "published_at": "2026-10-28T09:00:00Z"}
             ),
         })
         result = _run_script(tmp_path, fake_bin)
@@ -500,7 +515,7 @@ class TestRunReleaseFlowGates:
     def test_duplicate_release_does_not_call_release_create(self, tmp_path):
         """A duplicate release detected must not call gh release create."""
         existing = json.dumps(
-            {"tag_name": "v2.1.0", "published_at": "2026-10-28T09:00:00Z"}
+            {"tag_name": "v0.1.0", "published_at": "2026-10-28T09:00:00Z"}
         )
         log_file = tmp_path / "gh_calls.txt"
         gh_lines = [
@@ -559,13 +574,13 @@ class TestRunReleaseFlowRetry:
     def test_duplicate_detection_makes_rerun_idempotent(self, tmp_path):
         """A rerun after a published release exits complete via duplicate detection."""
         existing = json.dumps(
-            {"tag_name": "v2.1.0", "published_at": "2026-10-28T09:00:00Z"}
+            {"tag_name": "v0.1.0", "published_at": "2026-10-28T09:00:00Z"}
         )
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            "releases/tags/v2.1.0": existing,
+            "releases/tags/v0.1.0": existing,
         })
         r1 = _run_script(tmp_path, fake_bin)
         r2 = _run_script(tmp_path, fake_bin)
@@ -590,7 +605,7 @@ class TestRunReleaseFlowErrors:
             f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
             f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
             f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
-            # git/refs/tags returns [] -> NEXT_TAG = v2.1.0
+            # git/refs/tags returns [] -> NEXT_TAG = v0.1.0
             f"if [[ \"$ARGS\" == *'git/refs/tags'* ]]; then printf '%s' '[[]]'; exit 0; fi",
             # no duplicate for this tag
             f"if [[ \"$ARGS\" == *'releases/tags/'* ]]; then exit 1; fi",
@@ -648,7 +663,7 @@ class TestRunReleaseFlowErrors:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            "releases/tags/v2.1.0": None,
+            "releases/tags/v0.1.0": None,
         })
         result = _run_script(tmp_path, fake_bin,
                              extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(empty_notes)})
@@ -665,7 +680,7 @@ class TestRunReleaseFlowErrors:
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
-            "releases/tags/v2.1.0": None,
+            "releases/tags/v0.1.0": None,
         })
         result = _run_script(tmp_path, fake_bin,
                              extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(empty_notes)})

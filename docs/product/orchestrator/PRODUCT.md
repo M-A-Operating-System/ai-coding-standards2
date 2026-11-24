@@ -378,7 +378,10 @@ such.
 An operator can halt the pipeline at any time by creating a `.pipeline-stop`
 marker in the repository. The orchestrator checks for this marker before
 invoking any step and, in headless mode, blocks every step whose `stopOnLevel`
-is at or below the active level declared in the marker.
+is at or below the active level declared in the marker. This check covers all
+three dispatch paths: per-item work, scheduled flows, and event-triggered
+(PR-merge) flows — a scheduled or event-triggered flow is not dispatched if
+all its steps' `stopOnLevel` values are covered by the active stop level.
 
 Three stop levels correspond to three granularities of halt:
 

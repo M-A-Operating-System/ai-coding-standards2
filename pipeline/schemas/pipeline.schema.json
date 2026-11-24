@@ -151,7 +151,7 @@
 
         "trigger": {
           "type": "object",
-          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
+          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work; a schedule for work with no triggering item; or a GitHub event for work fired by a repository event such as a PR merging to main. Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
           "oneOf": [
             {
               "type": "object",
@@ -194,6 +194,18 @@
                 "timezone": {
                   "type": "string",
                   "description": "Per-flow timezone override for cron matching (e.g. 'UTC', 'America/Los_Angeles'). When present, takes precedence over defaults.schedule_timezone. Absent means use the pipeline default."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["event"],
+              "additionalProperties": false,
+              "properties": {
+                "event": {
+                  "type": "string",
+                  "enum": ["pull_request.closed"],
+                  "description": "GitHub event that fires this flow. This flow has no triggering work item; it fires when the specified event occurs and targets the main branch. The orchestrator dispatches the flow's steps via _run_pr_merge_flows on a merged pull request."
                 }
               }
             }
@@ -266,8 +278,8 @@
       "properties": {
         "agent": {
           "type": "string",
-          "pattern": "^(00_ondemand|01_product_docs|02_design|03_execute|04_evaluate|05_continuous)/[a-z][a-z0-9-]*[a-z0-9]$",
-          "description": "Stable step name in the form {phase}/{short-name}. For an agent-type step this matches the prompt at .claude/agents/{phase}/{short-name}.md and its frontmatter name field. Unaffected by which flow the step lives in -- phase governs where the prompt file sorts, not what work the step is for."
+          "pattern": "^(00_ondemand|01_product_docs|02_design|03_execute|04_evaluate|05_continuous)(/[a-z][a-z0-9-]*[a-z0-9])+$",
+          "description": "Stable step name in the form {phase}/{short-name} or {phase}/{subdir}/{short-name}. For an agent-type step this matches the prompt at .claude/agents/{phase}/{short-name}.md and its frontmatter name field. Unaffected by which flow the step lives in -- phase governs where the prompt file sorts, not what work the step is for."
         },
         "phase": {
           "type": "string",

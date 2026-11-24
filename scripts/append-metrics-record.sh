@@ -45,28 +45,33 @@ if [[ ! -f "$RECORD_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Git auth: derive the Basic header from
-# a token in the environment rather than inheriting the orchestrator's
-# GIT_CONFIG_* vars, which are deliberately not forwarded to scripts
-# (STD-SEC-022). The token is never embedded in a URL, keeping it out of
-# `git remote -v`, `ps`, and CI logs. Which token is the identity question, and
-# lib/github-identity.sh answers it once for every script (MI-7). When no token
-# is set at all the checkout's own credential helper is left to do the work.
+# Git auth: a url.insteadOf rewrite embeds the credential in the remote URL
+# before git attempts username resolution, so git never reaches the credential
+# subsystem (issue #717 -- http.extraHeader was silently bypassed because git
+# resolves a username before it checks any extra headers). The credential lives
+# only in GIT_CONFIG_* env vars, never written to .git/config on disk.
+# Which token is the identity question, and lib/github-identity.sh answers it
+# once for every script (MI-7). When no token is set at all the checkout's
+# own credential helper is left to do the work.
 # ---------------------------------------------------------------------------
 # shellcheck source=lib/github-identity.sh
 . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
+echo "append-metrics-record: identity source: ${AI_AGILE_GH_IDENTITY:-unset}" >&2
+
+# Author/committer identity for `git commit-tree` below -- without this, a
+# runner with no global git config set fails every append with "Author
+# identity unknown" (git commit-tree, unlike git push, has no credential
+# helper to fall back on). Same identity create-pr.sh already uses for its
+# own commits, so every system write is attributed consistently (MI-7).
+export GIT_AUTHOR_NAME="github-actions[bot]"
+export GIT_AUTHOR_EMAIL="github-actions[bot]@users.noreply.github.com"
+export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
+export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
 
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    # base64 -w 0 (GNU) suppresses line-wrapping; macOS base64 has no -w flag.
-    _ENCODED=$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" \
-        | base64 -w 0 2>/dev/null \
-        || printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64)
-    # Remove any extraHeader actions/checkout wrote into .git/config: git would
-    # otherwise send two Authorization headers and GitHub answers HTTP 400.
-    git config --local --unset-all "http.https://github.com/.extraHeader" 2>/dev/null || true
     export GIT_CONFIG_COUNT=1
-    export GIT_CONFIG_KEY_0="http.https://github.com/.extraHeader"
-    export GIT_CONFIG_VALUE_0="Authorization: Basic ${_ENCODED}"
+    export GIT_CONFIG_KEY_0="url.https://x-access-token:${GITHUB_TOKEN}@github.com/.insteadOf"
+    export GIT_CONFIG_VALUE_0="https://github.com/"
 fi
 
 CONTENT=$(mktemp)

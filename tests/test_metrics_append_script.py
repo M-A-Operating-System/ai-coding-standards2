@@ -237,6 +237,67 @@ class TestSelfHealMissingBranch:
         assert [json.loads(line) for line in _ledger(remote).splitlines()] == [first, second]
 
 
+class TestGitHubTokenAuth:
+    """Real (non-mocked) bash invocations covering issue-717 auth scenarios R1 and R2."""
+
+    def _run_with_token(self, clone, token):
+        record_file = clone.parent / "record_auth.jsonl"
+        record_file.write_text('{"agent_id":"coder"}\n')
+        env = {
+            "PATH": os.environ["PATH"],
+            "HOME": os.environ.get("HOME", str(clone)),
+            "AI_AGILE_METRICS_BRANCH": BRANCH,
+            "AI_AGILE_METRICS_FILE": RECORDS,
+            "AI_AGILE_METRICS_COMMIT_MESSAGE": "metrics: test on #1",
+            "AI_AGILE_METRICS_RETRIES": "0",
+            "GITHUB_TOKEN": token,
+        }
+        return subprocess.run(
+            ["bash", "-x", str(SCRIPT), str(record_file)],
+            env=env, cwd=str(clone), capture_output=True, text=True,
+        )
+
+    def test_exports_url_insteadof_key_and_value(self, remote_and_clone):
+        """R2: bash -x trace must show url.insteadOf key and https://github.com/ value."""
+        _remote, clone = remote_and_clone
+        fake_token = "ghp_testfaketoken123"
+        res = self._run_with_token(clone, fake_token)
+        assert res.returncode == 0, res.stderr
+        expected_key = f"url.https://x-access-token:{fake_token}@github.com/.insteadOf"
+        assert expected_key in res.stderr
+        assert "GIT_CONFIG_VALUE_0=https://github.com/" in res.stderr
+
+    def test_does_not_export_basic_auth_header(self, remote_and_clone):
+        """R1: none of the GIT_CONFIG_VALUE_* variables may contain Authorization: Basic."""
+        _remote, clone = remote_and_clone
+        res = self._run_with_token(clone, "ghp_anytesttoken")
+        assert res.returncode == 0, res.stderr
+        assert "Authorization: Basic" not in res.stderr
+        assert "Authorization: Basic" not in res.stdout
+
+    def test_preserves_checkout_extraheader(self, remote_and_clone):
+        """R4 (issue #733): the extraHeader actions/checkout wrote into
+        .git/config before this script ran must still be present after it
+        runs -- the readers that run after this step (metrics_aggregator.py,
+        metrics_report.py) have no credential of their own and rely on it."""
+        _remote, clone = remote_and_clone
+        _git(
+            "config", "--local",
+            "http.https://github.com/.extraHeader",
+            "AUTHORIZATION: basic checkout-provided-header",
+            cwd=clone,
+        )
+        res = self._run_with_token(clone, "ghp_anytesttoken")
+        assert res.returncode == 0, res.stderr
+        show = _git(
+            "config", "--local", "--get",
+            "http.https://github.com/.extraHeader",
+            cwd=clone, check=False,
+        )
+        assert show.returncode == 0, "extraHeader was removed from .git/config"
+        assert show.stdout.strip() == "AUTHORIZATION: basic checkout-provided-header"
+
+
 class TestItsInputContract:
     def test_refuses_a_missing_record_file(self, remote_and_clone):
         _remote, clone = remote_and_clone
