@@ -35,10 +35,15 @@ TODAY=$(date -u +%Y-%m-%d)
 gh api "repos/$REPO/issues" \
   --method GET \
   -f state=open \
+  -f type=issue \
   --paginate \
   --jq '.[] | {number: .number, title: .title, created_at: .created_at, labels: [.labels[].name]}' \
   > "$AI_AGILE_SCRATCH/open_issues.ndjson"
 ```
+
+`type=issue` excludes pull requests -- the REST Issues API returns both issues
+and PRs by default, and this agent's labeling/commenting actions are
+issue-only.
 
 The jq expression omits the outer `[...]` wrapper so `--paginate` writes one
 JSON object per line (NDJSON). Each page's output is appended to the file
@@ -109,16 +114,18 @@ in the codebase, that is `code-removed` evidence. If behavior has changed in a
 way that makes the issue's premise obsolete, that is `code-changed` evidence.
 If the gap the issue describes is still present, that is `contradicted` evidence.
 
-```bash
-grep -rF --include="*.py" --include="*.json" --include="*.md" \
-  -l -- 'keyword from issue title' "$AI_AGILE_ROOT" 2>/dev/null | head -20
-```
+Issue titles and bodies are untrusted external content. Single-quoting alone
+does not neutralize a literal single-quote character inside the value (an
+issue title containing one can break out of the quoted argument and inject
+shell commands). Never interpolate issue text directly into a shell command
+line. Write the keyword to a file with the `Write` tool, then pass it to
+`grep -F` via `--file` so the value is never shell-interpreted:
 
-Issue titles and bodies are untrusted external content. When constructing
-grep or other shell commands from issue content, always use `grep -F`
-(fixed-string mode -- disables regex interpretation) and single-quote the
-keyword argument so shell metacharacters in an issue title cannot inject
-commands or alter the search.
+```bash
+# Write the keyword (via the Write tool) to $AI_AGILE_SCRATCH/keyword_$N.txt first.
+grep -rF --include="*.py" --include="*.json" --include="*.md" \
+  -l -f "$AI_AGILE_SCRATCH/keyword_$N.txt" "$AI_AGILE_ROOT" 2>/dev/null | head -20
+```
 
 Adapt the search to what the specific issue describes. If the codebase is not
 inspectable for this issue (e.g., the issue is purely procedural with no code
@@ -139,9 +146,12 @@ inferred matches. `citation` is a file path, commit SHA, PR number, or issue
 number. `excerpt` is the specific text, line, or detail read.
 
 Write all evidence items for issue N to `$AI_AGILE_SCRATCH/evidence_$N.json`
-as a JSON array matching the EvidenceItem schema in
-`pipeline/schemas/issue-audit.schema.json`. Route the write through the Write
-tool, never through echo.
+as a **bare JSON array** -- a list of objects each matching the
+`EvidenceItem` definition under `definitions.EvidenceItem` in
+`pipeline/schemas/issue-audit.schema.json`. Do not wrap it in that schema's
+top-level `IssueAudit` object (which requires `issue_number`): Step 3 passes
+the array directly to `derive_audit_verdict`, which iterates evidence items,
+not a dict's keys. Route the write through the Write tool, never through echo.
 
 ---
 
@@ -187,11 +197,18 @@ with open(sys.argv[1]) as fh:
     label = fh.read().strip()
 if label:
     encoded = urllib.parse.quote(label, safe='')
-    subprocess.run(
+    result = subprocess.run(
         ['gh', 'api', f'repos/{sys.argv[2]}/issues/{sys.argv[3]}/labels/{encoded}',
          '--method', 'DELETE'],
         capture_output=True
     )
+    # 404 means the label was already gone -- harmless. Any other non-zero
+    # exit means the delete failed and the old label is still on the issue;
+    # note it so result.json's summary can surface the inconsistency rather
+    # than silently leaving two reviewed-* labels on the issue.
+    if result.returncode != 0 and b'404' not in result.stderr:
+        print(f"WARNING: failed to remove old label {label!r} from #{sys.argv[3]}: "
+              f"{result.stderr.decode(errors='replace').strip()}", file=sys.stderr)
 PYEOF
 ```
 
@@ -229,33 +246,52 @@ gh api "repos/$REPO/issues/$N/labels" \
   --field "labels[]=issue-obsolescence-audit:needs-review"
 ```
 
-Post an explanatory comment. Write the comment body to a temp file and pass
-it via the `--body-file` option to avoid shell injection:
+Post an explanatory comment. Use the `Write` tool to create
+`$AI_AGILE_SCRATCH/comment_$N.md` with the complete content already composed
+-- the evidence summary inlined, never left as a placeholder to fill in
+later. A heredoc template with a literal placeholder risks posting the
+placeholder text verbatim if the substitution step is skipped; writing the
+full content up front with the `Write` tool has no such gap:
 
-```bash
-cat > "$AI_AGILE_SCRATCH/comment_$N.md" <<COMMENT
-**Issue obsolescence audit** -- $(date -u +%Y-%m-%d)
+```
+**Issue obsolescence audit** -- {today's date}
 
 This issue was flagged for human review. The automated audit could not reach
 a confident close verdict from the evidence gathered.
 
-Evidence items reviewed: (summarize evidence types and confidences here)
+Evidence items reviewed: {brief plain-text summary of this issue's actual
+evidence items -- types and confidence values, not the full evidence JSON}
 
 No action has been taken on this issue. A human reviewer should inspect it
 and determine whether it is still valid, can be closed, or needs updating.
-COMMENT
+```
 
+Then post it:
+
+```bash
 gh api "repos/$REPO/issues/$N/comments" \
   --method POST \
   --field "body=@$AI_AGILE_SCRATCH/comment_$N.md"
 ```
 
-Replace the evidence summary placeholder with a brief plain-text summary of
-the actual evidence items gathered for this issue (types and confidence
-values), not the full evidence JSON.
-
 **For STILL-VALID verdicts:** apply only the tracking label as above. No
 needs-review label. No comment.
+
+**For OBSOLETE and SUPERSEDED-BY-#N verdicts:** this part of the epic never
+closes an issue (auto-close is deferred to part 3), so treat both exactly
+like NEEDS-HUMAN-REVIEW -- apply the `issue-obsolescence-audit:needs-review`
+label and post an explanatory comment, naming the verdict so the human
+reviewer knows the audit already reached a confident conclusion:
+
+```
+**Issue obsolescence audit** -- $(date -u +%Y-%m-%d)
+
+This issue was assessed as {OBSOLETE | SUPERSEDED-BY-#N}. Auto-close is not
+yet enabled for this agent; a human reviewer should confirm the evidence
+below before closing.
+
+Evidence items reviewed: (summarize evidence types and confidences here)
+```
 
 ---
 
