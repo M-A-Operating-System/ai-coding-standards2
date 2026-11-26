@@ -5,6 +5,7 @@ flowchart TD
     entry_n_00_ondemand__standards_migrator(["standards-migrator:requested"])
     entry_n_00_ondemand__branch_cleanup(["branch-cleanup:requested"])
     entry_n_00_ondemand__issue_cleanup(["issue-cleanup:requested"])
+    entry_n_00_ondemand__issue_obsolescence_audit(["issue-obsolescence-audit:requested"])
     entry_n_00_ondemand__blocker(["blocker:requested"])
     n_01_product_docs__issue_classifier["issue-classifier"]
     n_01_product_docs__request_sizing("request-sizing")
@@ -28,6 +29,7 @@ flowchart TD
     n_00_ondemand__standards_migrator["standards-migrator"]
     n_00_ondemand__branch_cleanup["branch-cleanup"]
     n_00_ondemand__issue_cleanup["issue-cleanup"]
+    n_00_ondemand__issue_obsolescence_audit["issue-obsolescence-audit"]
     n_00_ondemand__blocker("blocker")
     n_05_continuous__metrics_aggregation("metrics-aggregation")
     n_05_continuous__metrics_aggregation_daily("metrics-aggregation-daily")
@@ -51,6 +53,7 @@ flowchart TD
     entry_n_00_ondemand__standards_migrator --> n_00_ondemand__standards_migrator
     entry_n_00_ondemand__branch_cleanup --> n_00_ondemand__branch_cleanup
     entry_n_00_ondemand__issue_cleanup --> n_00_ondemand__issue_cleanup
+    entry_n_00_ondemand__issue_obsolescence_audit --> n_00_ondemand__issue_obsolescence_audit
     entry_n_00_ondemand__blocker --> n_00_ondemand__blocker
     n_01_product_docs__issue_classifier --> n_01_product_docs__request_sizing
     n_01_product_docs__request_sizing --> n_01_product_docs__prd_writer
