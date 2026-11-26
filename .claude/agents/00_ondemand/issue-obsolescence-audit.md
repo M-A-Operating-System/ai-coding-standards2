@@ -36,9 +36,13 @@ gh api "repos/$REPO/issues" \
   --method GET \
   -f state=open \
   --paginate \
-  --jq '[.[] | {number: .number, title: .title, created_at: .created_at, labels: [.labels[].name]}]' \
-  > "$AI_AGILE_SCRATCH/open_issues.json"
+  --jq '.[] | {number: .number, title: .title, created_at: .created_at, labels: [.labels[].name]}' \
+  > "$AI_AGILE_SCRATCH/open_issues.ndjson"
 ```
+
+The jq expression omits the outer `[...]` wrapper so `--paginate` writes one
+JSON object per line (NDJSON). Each page's output is appended to the file
+without producing concatenated arrays that would be invalid JSON.
 
 Exclude the triggering issue (`$ISSUE_NUMBER`) from the candidate list.
 
@@ -47,16 +51,15 @@ remaining issues, then take the 10 lowest-sorted (oldest by their single sort
 key):
 
 ```bash
-python3 -I - "$AI_AGILE_ROOT/pipeline/issue_audit_outcome.py" \
-  "$AI_AGILE_SCRATCH/open_issues.json" "$ISSUE_NUMBER" \
+python3 -I - "$AI_AGILE_ROOT/pipeline" \
+  "$AI_AGILE_SCRATCH/open_issues.ndjson" "$ISSUE_NUMBER" \
   > "$AI_AGILE_SCRATCH/batch.json" <<'PYEOF'
 import sys, json
 
-script_dir = sys.argv[1].rsplit('/', 1)[0]
-sys.path.insert(0, script_dir)
+sys.path.insert(0, sys.argv[1])
 import issue_audit_outcome
 
-issues = json.loads(open(sys.argv[2]).read())
+issues = [json.loads(line) for line in open(sys.argv[2]) if line.strip()]
 exclude = int(sys.argv[3])
 candidates = [i for i in issues if i["number"] != exclude]
 batch = issue_audit_outcome.select_batch(candidates, limit=10)
