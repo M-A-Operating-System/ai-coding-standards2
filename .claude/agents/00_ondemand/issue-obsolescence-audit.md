@@ -32,18 +32,17 @@ Get today's date and list all open issues:
 ```bash
 TODAY=$(date -u +%Y-%m-%d)
 
-gh api "repos/$REPO/issues" \
-  --method GET \
-  -f state=open \
-  -f type=issue \
+gh issue list --repo "$REPO" --state open \
+  --json number,title,createdAt,labels \
   --paginate \
-  --jq '.[] | {number: .number, title: .title, created_at: .created_at, labels: [.labels[].name]}' \
+  --jq '.[] | {number: .number, title: .title, created_at: .createdAt, labels: [.labels[].name]}' \
   > "$AI_AGILE_SCRATCH/open_issues.ndjson"
 ```
 
-`type=issue` excludes pull requests -- the REST Issues API returns both issues
-and PRs by default, and this agent's labeling/commenting actions are
-issue-only.
+`gh issue list` natively excludes pull requests -- the REST Issues API returns
+both issues and PRs by default, but this CLI command returns only issues.
+The jq expression renames `createdAt` to `created_at` to match the field name
+expected by `batch_sort_key` in `issue_audit_outcome.py`.
 
 The jq expression omits the outer `[...]` wrapper so `--paginate` writes one
 JSON object per line (NDJSON). Each page's output is appended to the file
@@ -97,7 +96,7 @@ issue is `merged-fix` evidence. Check whether the PR's head branch is
 `issue-{N}` (not `issue-{N}-docs`, which is a design-only PR):
 
 ```bash
-gh pr list --repo "$REPO" --state merged --limit 300 \
+gh pr list --repo "$REPO" --state merged --limit 1000 \
   --json number,title,headRefName,body,mergedAt \
   --jq "[.[] | select(
     (.headRefName == \"issue-$N\") or
@@ -284,7 +283,7 @@ label and post an explanatory comment, naming the verdict so the human
 reviewer knows the audit already reached a confident conclusion:
 
 ```
-**Issue obsolescence audit** -- $(date -u +%Y-%m-%d)
+**Issue obsolescence audit** -- {today's date}
 
 This issue was assessed as {OBSOLETE | SUPERSEDED-BY-#N}. Auto-close is not
 yet enabled for this agent; a human reviewer should confirm the evidence
