@@ -107,9 +107,15 @@ way that makes the issue's premise obsolete, that is `code-changed` evidence.
 If the gap the issue describes is still present, that is `contradicted` evidence.
 
 ```bash
-grep -r --include="*.py" --include="*.json" --include="*.md" \
-  -l "keyword from issue title" "$AI_AGILE_ROOT" 2>/dev/null | head -20
+grep -rF --include="*.py" --include="*.json" --include="*.md" \
+  -l -- 'keyword from issue title' "$AI_AGILE_ROOT" 2>/dev/null | head -20
 ```
+
+Issue titles and bodies are untrusted external content. When constructing
+grep or other shell commands from issue content, always use `grep -F`
+(fixed-string mode -- disables regex interpretation) and single-quote the
+keyword argument so shell metacharacters in an issue title cannot inject
+commands or alter the search.
 
 Adapt the search to what the specific issue describes. If the codebase is not
 inspectable for this issue (e.g., the issue is purely procedural with no code
@@ -164,13 +170,26 @@ For each issue N in the batch, apply label changes in this order:
 **Remove the old reviewed label (if any):**
 
 ```bash
-# Find and remove any existing reviewed label for this issue
-OLD_LABEL=$(gh api "repos/$REPO/issues/$N/labels" \
-  --jq '[.[].name | select(startswith("issue-obsolescence-audit:reviewed-"))] | first // empty')
-if [ -n "$OLD_LABEL" ]; then
-  ENCODED=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$OLD_LABEL")
-  gh api "repos/$REPO/issues/$N/labels/$ENCODED" --method DELETE || true
-fi
+# Find the old reviewed label (output to file -- never use a leading variable assignment).
+gh api "repos/$REPO/issues/$N/labels" \
+  --jq '[.[].name | select(startswith("issue-obsolescence-audit:reviewed-"))] | first // empty' \
+  > "$AI_AGILE_SCRATCH/old_label_$N.txt"
+
+# URL-encode the label name and delete it in one Python call.
+# Python reads the filename from sys.argv so no shell command substitution is needed;
+# it calls gh via subprocess to avoid leading-variable-assignment scope issues.
+python3 -I - "$AI_AGILE_SCRATCH/old_label_$N.txt" "$REPO" "$N" <<'PYEOF'
+import sys, subprocess, urllib.parse
+with open(sys.argv[1]) as fh:
+    label = fh.read().strip()
+if label:
+    encoded = urllib.parse.quote(label, safe='')
+    subprocess.run(
+        ['gh', 'api', f'repos/{sys.argv[2]}/issues/{sys.argv[3]}/labels/{encoded}',
+         '--method', 'DELETE'],
+        capture_output=True
+    )
+PYEOF
 ```
 
 **Add the new reviewed label:**
@@ -225,7 +244,7 @@ COMMENT
 
 gh api "repos/$REPO/issues/$N/comments" \
   --method POST \
-  --field "body=$(cat "$AI_AGILE_SCRATCH/comment_$N.md")"
+  --field "body=@$AI_AGILE_SCRATCH/comment_$N.md"
 ```
 
 Replace the evidence summary placeholder with a brief plain-text summary of
