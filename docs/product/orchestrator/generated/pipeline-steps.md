@@ -22,6 +22,7 @@ authoritative and these tables are a view of it.
 | `standards-migrator` | kind `issue` | -- |
 | `branch-cleanup` | kind `issue` | -- |
 | `issue-cleanup` | kind `issue` | -- |
+| `issue-obsolescence-audit` | kind `issue` | -- |
 | `blocker` | kind `issue` | -- |
 | `metrics-aggregation` | schedule `0 0 * * 1` | -- |
 | `metrics-aggregation-daily` | schedule `0 1 * * *` | -- |
@@ -310,6 +311,26 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `00_ondemand/issue-cleanup` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue close *)`, `Bash(gh pr list *)` | -- | -- |
+
+## Flow: `issue-obsolescence-audit`
+
+### Sequence and gates
+
+| Step | Kind | Unit | Trigger | Depends on | Human gate |
+|---|---|---|---|---|---|
+| `00_ondemand/issue-obsolescence-audit` | agent | `item` | `issue-obsolescence-audit:requested` | -- | -- |
+
+### Exclusions and retries
+
+| Step | Excluded classifications | Excluded labels | Max retries |
+|---|---|---|---|
+| `00_ondemand/issue-obsolescence-audit` | -- | -- | `1` |
+
+### Entitled activities
+
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/issue-obsolescence-audit` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh pr list *)`, `Bash(python3 *)`, `Bash(date *)` _(+2 more)_ | -- | -- |
 
 ## Flow: `blocker`
 

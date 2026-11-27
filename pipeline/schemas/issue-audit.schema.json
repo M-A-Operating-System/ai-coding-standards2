@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "issue-audit.schema.json",
+  "title": "AI Agile Issue Audit",
+  "description": "Schema for the structured evidence object the issue-obsolescence-audit agent produces per issue. The agent reports evidence items; pipeline/issue_audit_outcome.py's derive_audit_verdict computes the verdict from them, never the model's own narrative conclusion (issue #743, same discipline as pr-review.schema.json / issue #512 Part 2).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issue_number", "evidence"],
+  "properties": {
+    "issue_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The issue number being audited."
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/EvidenceItem" }
+    }
+  },
+  "definitions": {
+    "EvidenceItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "confidence", "excerpt"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "code-removed",
+            "code-changed",
+            "merged-fix",
+            "superseding-issue",
+            "contradicted",
+            "unverifiable"
+          ],
+          "description": "The kind of evidence: code-removed (mechanism no longer exists), code-changed (behavior now contradicts the issue), merged-fix (a commit/PR already implements the fix), superseding-issue (a broader issue makes this one moot), contradicted (gap is still present), unverifiable (cannot be checked by static read)."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence this evidence item is accurate. 0.85 is the closing threshold: derive_audit_verdict closes the issue only when at least one closing-direction item reaches this value."
+        },
+        "citation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "File path (+ line), commit SHA, or issue number supporting this claim. Required for every type except unverifiable. A bare assertion with no citation is not acceptable."
+        },
+        "excerpt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The specific line(s) read from the file, commit, or issue that support the claim."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "not": { "const": "unverifiable" } } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["citation"]
+          }
+        }
+      ]
+    }
+  }
+}

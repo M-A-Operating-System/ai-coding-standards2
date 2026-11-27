@@ -225,6 +225,20 @@ On-demand backlog-hygiene sweep, requested by a human applying a label. Closes i
 
 Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue.
 
+## Flow: `issue-obsolescence-audit`
+
+- **Applies to:** kind `issue`
+- **Naming:** --
+
+On-demand batch obsolescence audit for open issues, requested by a human applying a label. Selects up to 10 open issues by single sort key, gathers evidence, computes a deterministic verdict, and applies label and close actions: updates the reviewed-YYYY-MM-DD tracking label for every issue; closes issues with OBSOLETE or SUPERSEDED-BY-#N verdicts at confidence >= 0.85 with the appropriate label and a cited comment; applies needs-review label with explanatory comment for NEEDS-HUMAN-REVIEW verdicts. Produces no code commit, so this flow declares no naming.
+
+### `00_ondemand/issue-obsolescence-audit`
+
+- **Kind:** agent
+- **Phase:** `00_ondemand`
+
+Ad-hoc batch obsolescence audit. Selects up to 10 open issues by ascending single sort key (reviewed-YYYY-MM-DD label date if present, else created_at), gathers structured evidence for each, computes OBSOLETE/SUPERSEDED-BY-#N/STILL-VALID/NEEDS-HUMAN-REVIEW verdicts via pipeline/issue_audit_outcome.py, and applies label and close actions: replaces reviewed-YYYY-MM-DD tracking label for every issue; closes issues with OBSOLETE or SUPERSEDED-BY-#N verdicts at confidence >= 0.85 with the appropriate label and cited closing comment; applies needs-review label and posts comment for NEEDS-HUMAN-REVIEW verdicts. Triggered by applying the issue-obsolescence-audit:requested label to any issue.
+
 ## Flow: `blocker`
 
 - **Applies to:** kind `issue`
