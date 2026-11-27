@@ -394,7 +394,8 @@ class TestHierarchy:
         assert root is None
         assert depth is None
 
-    def test_compute_hierarchy_sub_issue(self):
+    def test_compute_hierarchy_sub_issue(self, monkeypatch):
+        monkeypatch.setenv("REPO", "owner/repo")
         parent_issue_resp = MagicMock()
         parent_issue_resp.stdout = json.dumps({
             "body": "",
@@ -407,7 +408,8 @@ class TestHierarchy:
         assert root == 507
         assert depth == 1
 
-    def test_compute_hierarchy_nested_sub_issue(self):
+    def test_compute_hierarchy_nested_sub_issue(self, monkeypatch):
+        monkeypatch.setenv("REPO", "owner/repo")
         grandparent_resp = MagicMock()
         grandparent_resp.stdout = json.dumps({
             "body": "",
@@ -433,8 +435,9 @@ class TestHierarchy:
 class TestPipelineIntegration:
     """Realises scenarios in pdd-measurement-pipeline-integration-and-schema-extension.md."""
 
-    def test_absent_label_exits_cleanly(self):
+    def test_absent_label_exits_cleanly(self, monkeypatch):
         """Scenario: Script skips execution when approval label is absent."""
+        monkeypatch.setenv("REPO", "owner/repo")
         mock_resp = _make_issue_response(_VALID_BODY, labels=["some-other-label"])
         with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
             with pytest.raises(SystemExit) as exc_info:
