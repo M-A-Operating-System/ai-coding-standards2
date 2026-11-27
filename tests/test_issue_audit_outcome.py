@@ -1,4 +1,4 @@
-"""Tests for pipeline/issue_audit_outcome.py (issue #743).
+"""Tests for pipeline/issue_audit_outcome.py (issue #743, issue #745).
 
 Gherkin scenarios traced (issue #743):
   - Valid audit object passes schema validation
@@ -9,6 +9,12 @@ Gherkin scenarios traced (issue #743):
   - Verdict SUPERSEDED-BY-#N when a superseding issue is cited
   - Verdict NEEDS-HUMAN-REVIEW for conflicting evidence
   - Batch selection interleaves never-reviewed and reviewed issues by single age key
+
+Gherkin scenarios traced (issue #745):
+  - Schema validation rejects a verdict with a missing citation (merged-fix)
+  - Schema validation rejects a verdict with a missing citation (superseding-issue)
+  - OBSOLETE verdict below the confidence threshold does not auto-close (returns NEEDS-HUMAN-REVIEW)
+  - STILL-VALID verdict leaves the issue open (no closing evidence above threshold)
 """
 import json
 import sys
@@ -90,6 +96,22 @@ class TestSchema:
         jsonschema = pytest.importorskip("jsonschema")
         validator = jsonschema.Draft7Validator(_schema())
         errors = list(validator.iter_errors({"issue_number": 1}))
+        assert errors != []
+
+    def test_merged_fix_without_citation_fails(self):
+        """merged-fix is a closing type; schema must reject it without citation (issue #745)."""
+        jsonschema = pytest.importorskip("jsonschema")
+        validator = jsonschema.Draft7Validator(_schema())
+        item = {"type": "merged-fix", "confidence": 0.9, "excerpt": "PR #42 merged"}
+        errors = list(validator.iter_errors(_audit([item])))
+        assert errors != []
+
+    def test_superseding_issue_without_citation_fails(self):
+        """superseding-issue is a closing type; schema must reject it without citation (issue #745)."""
+        jsonschema = pytest.importorskip("jsonschema")
+        validator = jsonschema.Draft7Validator(_schema())
+        item = {"type": "superseding-issue", "confidence": 0.9, "excerpt": "covered by #800"}
+        errors = list(validator.iter_errors(_audit([item])))
         assert errors != []
 
 
