@@ -54,6 +54,7 @@ import sys
 import os
 import json
 import subprocess
+import uuid
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -70,6 +71,7 @@ from calculate_pdd_measurements import (
     main,
     METRIC_VERSION,
     AGENT_ID,
+    CYCLE_ID_NAMESPACE,
 )
 
 
@@ -479,6 +481,51 @@ class TestPipelineIntegration:
         assert "scenarios" in record_out
         assert "total_steps" in record_out
         assert "metric_version" in record_out
+        assert "AI_AGILE_STATUS: complete" in captured.err
+
+    def test_duplicate_cycle_id_skips_append(self, capsys, monkeypatch):
+        """Scenario: Script skips the append when cycle_id already exists in the ledger."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "classification: enhancement"],
+        )
+
+        existing_cycle_id = str(
+            uuid.uuid5(CYCLE_ID_NAMESPACE, "pdd-measurements/issue-1")
+        )
+
+        git_fetch_ok = MagicMock()
+        git_fetch_ok.returncode = 0
+
+        append_calls: list = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:
+                return fetch_resp
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return git_fetch_ok
+            if isinstance(cmd, list) and cmd[:2] == ["git", "show"]:
+                git_show_hit = MagicMock()
+                git_show_hit.returncode = 0
+                git_show_hit.stdout = json.dumps({"cycle_id": existing_cycle_id}) + "\n"
+                return git_show_hit
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                append_calls.append(cmd)
+                return MagicMock(returncode=0, stdout="appended", stderr="")
+            return MagicMock(returncode=0)
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run,
+        ):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+        assert append_calls == []
+        captured = capsys.readouterr()
+        assert "already in ledger; skipping duplicate append" in captured.err
         assert "AI_AGILE_STATUS: complete" in captured.err
 
     def test_sub_issue_hierarchy_fields_non_null(self, monkeypatch):

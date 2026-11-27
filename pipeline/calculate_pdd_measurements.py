@@ -243,6 +243,8 @@ def _compute_hierarchy(
 
     Traverses the parent chain by fetching parent issues until a root is found.
     Returns (None, None, None) when the issue has no parent-issue label.
+    Returns (parent_issue_number, None, None) if a mid-chain fetch fails --
+    the immediate parent is known but the root and depth could not be resolved.
     """
     parent_num = _extract_parent_issue_number(labels)
     if parent_num is None:
@@ -278,7 +280,20 @@ def _compute_hierarchy(
 
 
 def _ledger_has_cycle_id(cycle_id: str, env: dict) -> bool:
-    """Return True if cycle_id already exists in the metrics ledger."""
+    """Return True if cycle_id already exists in the metrics ledger.
+
+    Fetches the metrics branch first: a standard CI checkout has no local ref
+    for this orphan branch, so `git show origin/{branch}:...` would otherwise
+    fail every time on a fresh runner and silently return False, defeating
+    the whole point of this dedup check (same pattern as read_metrics_records
+    in pipeline_orchestrator.py).
+    """
+    fetch = subprocess.run(
+        ["git", "fetch", "origin", METRICS_BRANCH],
+        capture_output=True, text=True, env=env,
+    )
+    if fetch.returncode != 0:
+        return False
     result = subprocess.run(
         ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
         capture_output=True, text=True, env=env,
