@@ -761,7 +761,7 @@ _HTML_HEADER = (
     "  .front-matter ul.toc a { color: inherit; text-decoration: none; }\n"
     "  h2.metric-title { font-size: 12pt; margin: 0 0 1mm; }\n"
     "  p.metric-desc { font-size: 9pt; color: #374151; margin: 0 0 2mm; }\n"
-    "  .row { margin-bottom: 4mm; overflow: hidden; }\n"
+    "  .row { margin-bottom: 4mm; overflow: hidden; clear: both; }\n"
     "  .row img { width: 50%; height: auto; float: left; }\n"
     "</style>\n"
     "</head>\n"

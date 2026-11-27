@@ -1168,6 +1168,17 @@ class TestWeasyPrintLayout:
         assert "float: left" in _HTML_HEADER
         assert "overflow: hidden" in _HTML_HEADER
 
+    def test_row_css_clears_floats_between_rows(self):
+        """R-CSS-748b: .row must also carry clear:both. Without it, a float
+        left uncleared by one .row's own overflow:hidden clearfix can still
+        affect the next sibling .row's layout in WeasyPrint 63.1, collapsing
+        every row but the first few down to near-zero height and visually
+        stacking/overlapping their chart images -- a real regression found
+        in a live multi-metric report (not caught by the single-row test
+        above, which has no second row for a float to leak into)."""
+        from metrics_report import _HTML_HEADER
+        assert "clear: both" in _HTML_HEADER
+
     def test_weasyprint_embeds_images_in_float_layout(self, tmp_path):
         """R-WEASY-748: render a minimal two-image HTML document through
         WeasyPrint using the fixed float layout and assert the PDF contains
@@ -1178,15 +1189,13 @@ class TestWeasyPrintLayout:
         unconditionally."""
         weasyprint = pytest.importorskip("weasyprint", exc_type=ImportError)
         import subprocess
+        from metrics_report import _HTML_HEADER, _HTML_FOOTER
 
         img_tag = f'<img src="data:image/png;base64,{_MINIMAL_PNG_B64}" style="width:50%;float:left;">'
         html_doc = (
-            "<!DOCTYPE html><html><head><style>"
-            ".row { margin-bottom: 4mm; overflow: hidden; }"
-            ".row img { width: 50%; height: auto; float: left; }"
-            "</style></head><body>"
-            f'<div class="row">{img_tag}{img_tag}</div>'
-            "</body></html>"
+            _HTML_HEADER
+            + f'<div class="row">{img_tag}{img_tag}</div>'
+            + _HTML_FOOTER
         )
 
         pdf_path = str(tmp_path / "test.pdf")
@@ -1207,4 +1216,75 @@ class TestWeasyPrintLayout:
         assert len(image_lines) == 2, (
             f"Expected 2 embedded images in PDF, found {len(image_lines)}. "
             f"pdfimages output:\n{result.stdout}"
+        )
+
+    def test_weasyprint_does_not_collapse_later_rows(self, tmp_path):
+        """R-WEASY-748b: render THREE rows (not one) through WeasyPrint and
+        rasterize the page, then assert each row occupies a distinct,
+        non-overlapping vertical band of the page. A single-row test (like
+        the one above) cannot detect this: the bug only appears when a float
+        from one .row leaks into the next -- it is not caught by image count
+        alone, since pdfimages still reports every image present even when
+        their boxes have collapsed on top of each other.
+
+        Skipped automatically when WeasyPrint, pdftoppm, or Pillow are
+        unavailable; the CSS tests above verify correctness unconditionally.
+        """
+        weasyprint = pytest.importorskip("weasyprint", exc_type=ImportError)
+        pytest.importorskip("PIL", exc_type=ImportError)
+        import shutil
+        import subprocess
+        from PIL import Image
+        from metrics_report import _HTML_HEADER, _HTML_FOOTER
+
+        if shutil.which("pdftoppm") is None:
+            pytest.skip("pdftoppm (poppler-utils) not installed")
+
+        img_style = "width:50%;height:100px;"
+        rows_html = "".join(
+            f'<div class="row">'
+            f'<img src="data:image/png;base64,{_MINIMAL_PNG_B64}" style="{img_style}">'
+            f'<img src="data:image/png;base64,{_MINIMAL_PNG_B64}" style="{img_style}">'
+            f'</div>'
+            for _ in range(3)
+        )
+        html_doc = _HTML_HEADER + rows_html + _HTML_FOOTER
+
+        pdf_path = str(tmp_path / "test.pdf")
+        weasyprint.HTML(string=html_doc).write_pdf(pdf_path)
+
+        png_prefix = str(tmp_path / "page")
+        subprocess.run(
+            ["pdftoppm", "-png", "-r", "100", pdf_path, png_prefix],
+            check=True, capture_output=True,
+        )
+        png_path = f"{png_prefix}-1.png"
+        img = Image.open(png_path).convert("L")  # grayscale
+        width, height = img.size
+
+        # For each pixel row, record whether it contains any non-white
+        # content (a very loose threshold -- these are flat-color test
+        # images, not photographs).
+        pixels = img.load()
+        row_has_content = []
+        for y in range(height):
+            has_content = any(pixels[x, y] < 250 for x in range(0, width, 4))
+            row_has_content.append(has_content)
+
+        # Count distinct vertical bands of content separated by at least one
+        # blank pixel row. Three non-overlapping rows must produce 3 bands;
+        # the collapsed-layout bug merges rows into a single band (or very
+        # few), since their boxes stack on top of each other instead of
+        # stacking below each other.
+        bands = 0
+        previously_blank = True
+        for has_content in row_has_content:
+            if has_content and previously_blank:
+                bands += 1
+            previously_blank = not has_content
+
+        assert bands == 3, (
+            f"Expected 3 distinct non-overlapping chart rows, found {bands} "
+            f"band(s) of content -- rows are overlapping or collapsing. "
+            f"See {png_path} for the rendered page."
         )
