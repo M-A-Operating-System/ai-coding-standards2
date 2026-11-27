@@ -31,7 +31,7 @@ PYTHON_SCRIPT="${REPO_ROOT}/pipeline/calculate_pdd_measurements.py"
 
 if [[ ! -f "$PYTHON_SCRIPT" ]]; then
     echo "pdd-measurements: ERROR: not found: ${PYTHON_SCRIPT}" >&2
-    echo "AI_AGILE_STATUS: blocked"
+    echo "AI_AGILE_STATUS: blocked" >&2
     exit 1
 fi
 

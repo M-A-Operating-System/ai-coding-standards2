@@ -474,6 +474,7 @@ class TestPipelineIntegration:
         assert "scenarios" in record_out
         assert "total_steps" in record_out
         assert "metric_version" in record_out
+        assert "AI_AGILE_STATUS: complete" in captured.err
 
     def test_sub_issue_hierarchy_fields_non_null(self, monkeypatch):
         """Scenario: Record includes hierarchy fields for a sub-issue."""
