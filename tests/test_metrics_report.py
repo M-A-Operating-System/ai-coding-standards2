@@ -1133,3 +1133,74 @@ class TestNowParsing:
         records = [_blended(_week_ts(now, 1), count_issues=2)]
         descs = mr.prepare_report_data(records, resolved)
         assert len(descs) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Issue #748: WeasyPrint drops chart images when .row uses display:flex with
+# percentage-width/height:auto on child <img> elements.
+#
+# Scenario: HTML template does not use the broken flex-and-percentage-width
+# CSS combination  (R-CSS-748)
+# Scenario: WeasyPrint embeds all chart images in a float-layout report
+# (R-WEASY-748 -- skipped when WeasyPrint is not importable in this env)
+# ---------------------------------------------------------------------------
+
+# Minimal valid 1x1 PNG (red pixel) encoded as base64, used as a synthetic
+# chart image for the WeasyPrint rendering integration test below.
+_MINIMAL_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+
+
+class TestWeasyPrintLayout:
+    def test_row_css_does_not_combine_flex_with_percentage_width_img(self):
+        """R-CSS-748: _HTML_HEADER must not set display:flex on .row while
+        .row img carries width:50% and height:auto -- the combination that
+        causes WeasyPrint 63.1 to silently drop every <img> from the PDF."""
+        from metrics_report import _HTML_HEADER
+        assert "display: flex" not in _HTML_HEADER
+
+    def test_row_css_uses_float_layout(self):
+        """R-CSS-748: the replacement layout must be float-based: .row gets
+        overflow:hidden (clearfix) and .row img gets float:left."""
+        from metrics_report import _HTML_HEADER
+        assert "float: left" in _HTML_HEADER
+        assert "overflow: hidden" in _HTML_HEADER
+
+    def test_weasyprint_embeds_images_in_float_layout(self, tmp_path):
+        """R-WEASY-748: render a minimal two-image HTML document through
+        WeasyPrint using the fixed float layout and assert the PDF contains
+        exactly 2 embedded images as reported by pdfimages.
+
+        Skipped automatically when WeasyPrint cannot be imported (broken PIL
+        in this CI environment); the CSS tests above verify correctness
+        unconditionally."""
+        weasyprint = pytest.importorskip("weasyprint", exc_type=ImportError)
+        import subprocess
+
+        img_tag = f'<img src="data:image/png;base64,{_MINIMAL_PNG_B64}" style="width:50%;float:left;">'
+        html_doc = (
+            "<!DOCTYPE html><html><head><style>"
+            ".row { margin-bottom: 4mm; overflow: hidden; }"
+            ".row img { width: 50%; height: auto; float: left; }"
+            "</style></head><body>"
+            f'<div class="row">{img_tag}{img_tag}</div>'
+            "</body></html>"
+        )
+
+        pdf_path = str(tmp_path / "test.pdf")
+        weasyprint.HTML(string=html_doc).write_pdf(pdf_path)
+
+        result = subprocess.run(
+            ["pdfimages", "-list", pdf_path],
+            capture_output=True, text=True,
+        )
+        image_lines = [
+            line for line in result.stdout.splitlines()
+            if line.strip() and not line.startswith("-") and not line.lower().startswith("page")
+        ]
+        assert len(image_lines) == 2, (
+            f"Expected 2 embedded images in PDF, found {len(image_lines)}. "
+            f"pdfimages output:\n{result.stdout}"
+        )
