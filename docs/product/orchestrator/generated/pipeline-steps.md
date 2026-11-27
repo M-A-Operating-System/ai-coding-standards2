@@ -330,7 +330,7 @@ The groups below are this step's authoritative deny list, flattened at load time
 
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
-| `00_ondemand/issue-obsolescence-audit` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh pr list *)`, `Bash(python3 *)`, `Bash(date *)` | -- | -- |
+| `00_ondemand/issue-obsolescence-audit` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh pr list *)`, `Bash(python3 *)`, `Bash(date *)` _(+2 more)_ | -- | -- |
 
 ## Flow: `blocker`
 

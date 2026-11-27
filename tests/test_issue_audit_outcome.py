@@ -163,6 +163,19 @@ class TestDeriveAuditVerdict:
         ]
         assert derive_audit_verdict(evidence) == "SUPERSEDED-BY-#820"
 
+    def test_superseded_digit_free_citation_raises(self):
+        """_superseded_verdict raises ValueError when citation has no digits."""
+        evidence = [
+            {
+                "type": "superseding-issue",
+                "confidence": 0.9,
+                "citation": "see discussion thread",
+                "excerpt": "superseded by broader work",
+            }
+        ]
+        with pytest.raises(ValueError):
+            derive_audit_verdict(evidence)
+
     def test_still_valid_contradicted_above_threshold(self):
         evidence = [_item(type="contradicted", confidence=0.9)]
         assert derive_audit_verdict(evidence) == STILL_VALID

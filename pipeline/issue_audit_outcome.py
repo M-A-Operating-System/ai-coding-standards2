@@ -20,8 +20,11 @@ CLOSING_TYPES = frozenset({"code-removed", "code-changed", "merged-fix"})
 def _superseded_verdict(citation: str) -> str:
     """Format SUPERSEDED-BY-#N from a citation that holds the issue number."""
     m = re.search(r"(\d+)", str(citation))
-    n = m.group(1) if m else citation
-    return f"SUPERSEDED-BY-#{n}"
+    if not m:
+        raise ValueError(
+            f"superseding-issue citation contains no issue number: {citation!r}"
+        )
+    return f"SUPERSEDED-BY-#{m.group(1)}"
 
 
 def derive_audit_verdict(evidence: list) -> str:

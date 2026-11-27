@@ -779,7 +779,9 @@
             "Bash(gh issue view *)",
             "Bash(gh pr list *)",
             "Bash(python3 *)",
-            "Bash(date *)"
+            "Bash(date *)",
+            "Bash(grep *)",
+            "Bash(head *)"
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 80 },
