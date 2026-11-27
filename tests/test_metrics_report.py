@@ -1196,9 +1196,13 @@ class TestWeasyPrintLayout:
             ["pdfimages", "-list", pdf_path],
             capture_output=True, text=True,
         )
+        # pdfimages lists a soft-mask ("smask") row alongside each image row
+        # for any PNG with an alpha channel -- filter to the "image" type
+        # column, or a 2-image PDF with alpha reads as 4 rows, not 2.
         image_lines = [
             line for line in result.stdout.splitlines()
             if line.strip() and not line.startswith("-") and not line.lower().startswith("page")
+            and line.split()[2] == "image"
         ]
         assert len(image_lines) == 2, (
             f"Expected 2 embedded images in PDF, found {len(image_lines)}. "
