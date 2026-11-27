@@ -309,10 +309,18 @@ import sys, json
 sys.path.insert(0, sys.argv[1])
 import issue_audit_outcome
 evidence = json.loads(open(sys.argv[2]).read())
-top = issue_audit_outcome.select_top_evidence(evidence, issue_audit_outcome.CLOSING_TYPES)
-print(json.dumps(top))
+try:
+    top = issue_audit_outcome.select_top_evidence(evidence, issue_audit_outcome.CLOSING_TYPES)
+    print(json.dumps(top))
+except ValueError as e:
+    print(json.dumps({"error": str(e)}))
 PYEOF
 ```
+
+If `top_evidence_$N.json` contains an `"error"` key, skip the comment and
+close for issue `$N`, record the failure in your `result.json` summary (e.g.
+`"select_top_evidence failed for issue #N: <error>"`), and continue to the
+next issue in the batch.
 
 Use the `Write` tool to compose `$AI_AGILE_SCRATCH/comment_$N.md` with the
 citation and excerpt from `top_evidence_$N.json` inlined -- never leave
@@ -378,10 +386,17 @@ verdict = open(sys.argv[2]).read().strip()
 m = re.search(r"(\d+)", verdict)
 superseding_number = m.group(1) if m else ""
 evidence = json.loads(open(sys.argv[3]).read())
-top = issue_audit_outcome.select_top_evidence(evidence, {"superseding-issue"})
-print(json.dumps({"superseding_number": superseding_number, "citation": top.get("citation", ""), "excerpt": top.get("excerpt", ""), "confidence": top.get("confidence", 0)}))
+try:
+    top = issue_audit_outcome.select_top_evidence(evidence, {"superseding-issue"})
+    print(json.dumps({"superseding_number": superseding_number, "citation": top.get("citation", ""), "excerpt": top.get("excerpt", ""), "confidence": top.get("confidence", 0)}))
+except ValueError as e:
+    print(json.dumps({"error": str(e)}))
 PYEOF
 ```
+
+If `top_evidence_$N.json` contains an `"error"` key, skip the comment and
+close for issue `$N`, record the failure in your `result.json` summary, and
+continue to the next issue in the batch.
 
 Use the `Write` tool to compose `$AI_AGILE_SCRATCH/comment_$N.md` with the
 superseding issue number, citation, and excerpt inlined:

@@ -20,9 +20,14 @@
 **When** the verdict function is called with evidence items all supporting closure with an aggregate confidence of exactly 0.85
 **Then** the returned verdict is `OBSOLETE`
 
-## Scenario: Verdict function returns STILL-VALID just below 0.85 confidence threshold
+## Scenario: Verdict function returns NEEDS-HUMAN-REVIEW when every evidence item is below 0.85 confidence threshold
 **Given** `pipeline/issue_audit_outcome.py` is imported
 **When** the verdict function is called with evidence items supporting closure with an aggregate confidence just below 0.85
+**Then** the returned verdict is `NEEDS-HUMAN-REVIEW`
+
+## Scenario: Verdict function returns STILL-VALID when a contradicted item is at or above 0.85 confidence threshold
+**Given** `pipeline/issue_audit_outcome.py` is imported
+**When** the verdict function is called with evidence items containing only a contradicted item with confidence at or above 0.85 and no closing or superseding item above the threshold
 **Then** the returned verdict is `STILL-VALID`
 
 ## Scenario: Verdict function returns SUPERSEDED-BY-#N when a superseding issue is cited
