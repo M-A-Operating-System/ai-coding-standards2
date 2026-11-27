@@ -34,6 +34,7 @@ from issue_audit_outcome import (
     NEEDS_HUMAN_REVIEW,
     OBSOLETE,
     STILL_VALID,
+    _superseded_verdict,
     batch_sort_key,
     derive_audit_verdict,
     select_batch,
@@ -163,8 +164,17 @@ class TestDeriveAuditVerdict:
         ]
         assert derive_audit_verdict(evidence) == "SUPERSEDED-BY-#820"
 
-    def test_superseded_digit_free_citation_raises(self):
-        """_superseded_verdict raises ValueError when citation has no digits."""
+    def test_superseded_verdict_digit_free_citation_raises(self):
+        """_superseded_verdict itself still raises ValueError on a digit-free
+        citation -- derive_audit_verdict is the one that must catch it."""
+        with pytest.raises(ValueError):
+            _superseded_verdict("see discussion thread")
+
+    def test_digit_free_superseding_citation_falls_back_to_needs_human_review(self):
+        """derive_audit_verdict must not let _superseded_verdict's ValueError
+        propagate out of Step 3 -- fail closed to NEEDS_HUMAN_REVIEW instead
+        of crashing the script and leaving the issue with no verdict action
+        (epic #741 review, RV-001)."""
         evidence = [
             {
                 "type": "superseding-issue",
@@ -173,8 +183,7 @@ class TestDeriveAuditVerdict:
                 "excerpt": "superseded by broader work",
             }
         ]
-        with pytest.raises(ValueError):
-            derive_audit_verdict(evidence)
+        assert derive_audit_verdict(evidence) == NEEDS_HUMAN_REVIEW
 
     def test_still_valid_contradicted_above_threshold(self):
         evidence = [_item(type="contradicted", confidence=0.9)]
@@ -308,6 +317,24 @@ class TestBatchSelection:
         """Labels may come as dicts with a 'name' key (GitHub API format)."""
         issue = self._issue(5, "2023-01-01", labels=[{"name": self._reviewed_label("2024-04-01")}])
         assert batch_sort_key(issue) == "2024-04-01"
+
+    def test_full_iso_timestamp_created_at_truncated_to_date(self):
+        """created_at from the real GitHub API is a full ISO timestamp, not a
+        bare date -- batch_sort_key must truncate it so it compares against a
+        reviewed-label date (always YYYY-MM-DD) correctly (epic #741 review,
+        RV-002)."""
+        issue = self._issue(6, "2024-01-15T10:30:00Z")
+        assert batch_sort_key(issue) == "2024-01-15"
+
+    def test_never_reviewed_same_day_iso_timestamp_ties_with_reviewed(self):
+        """A never-reviewed issue created on the same calendar day as a
+        reviewed-* label date must sort as a tie with it (same date key),
+        not strictly behind it as an untruncated ISO timestamp (always
+        string-greater than the bare label date) would cause."""
+        never_reviewed_today = self._issue(1, "2024-02-01T08:00:00Z")
+        reviewed_same_day = self._issue(2, "2020-01-01", labels=[self._reviewed_label("2024-02-01")])
+
+        assert batch_sort_key(never_reviewed_today) == batch_sort_key(reviewed_same_day)
 
 
 class TestSelectTopEvidence:

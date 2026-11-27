@@ -67,7 +67,14 @@ def derive_audit_verdict(evidence: list) -> str:
         return OBSOLETE
 
     if superseding_item:
-        return _superseded_verdict(superseding_item.get("citation", ""))
+        try:
+            return _superseded_verdict(superseding_item.get("citation", ""))
+        except ValueError:
+            # citation has no issue number to format SUPERSEDED-BY-#N with --
+            # fail closed to NEEDS_HUMAN_REVIEW rather than let this raise
+            # propagate out of the Step 3 script and leave the issue with no
+            # verdict action at all (epic #741 review).
+            return NEEDS_HUMAN_REVIEW
 
     if has_contradicted:
         return STILL_VALID
@@ -106,7 +113,11 @@ def batch_sort_key(issue: dict) -> str:
         m = re.match(r"issue-obsolescence-audit:reviewed-(\d{4}-\d{2}-\d{2})$", name)
         if m:
             return m.group(1)
-    return issue.get("created_at", "")
+    # Truncate to YYYY-MM-DD: a reviewed-label date is always this length,
+    # and created_at's full ISO timestamp would otherwise sort a never-
+    # reviewed issue after a same-day reviewed one instead of comparing by
+    # date alone (epic #741 review).
+    return issue.get("created_at", "")[:10]
 
 
 def select_batch(issues: list, limit: int = 10) -> list:
