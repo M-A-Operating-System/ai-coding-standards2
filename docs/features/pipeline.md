@@ -231,3 +231,15 @@
 **And** a scheduled flow has a step with `stopOnLevel` 2
 **When** `_run_scheduled_flows()` processes that flow
 **Then** the flow proceeds to dispatch as normal
+
+## Scenario: empty-output outcome_overridden review triggers STATUS_FAILED
+
+**Given** a step result has no `output` and no `body_write`, and the orchestrator's independent policy check computes `review` overriding the step's self-reported outcome
+**When** `_apply_result()` processes the step result through the `outcome_overridden` branch
+**Then** the step's sentinel status is `STATUS_FAILED` with a non-empty error message
+
+## Scenario: non-empty-output outcome_overridden review proceeds without failure
+
+**Given** a step result has non-empty `output`, and the orchestrator's independent policy check computes `review` overriding the step's self-reported outcome
+**When** `_apply_result()` processes the step result through the `outcome_overridden` branch
+**Then** the review gate is applied and the rendered artefact is posted without error
