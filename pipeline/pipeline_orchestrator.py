@@ -7741,17 +7741,39 @@ def _apply_result(
             return True
         step_result = _rendered
         _outcome_policy_applied = True
-        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        _posted = _post_artefact_if_present(gh, agent_def, work_item, step_result)
         if _outcome_overridden:
-            # sentinel_message still holds the model's own stale advisory
-            # text (e.g. "Verdict (advisory): APPROVE.") -- without this,
-            # the closing-announcement audit-trail comment would pair the
-            # corrected outcome with that stale, now-wrong summary.
-            sentinel_message = (
-                f"outcome_policy override: code-computed verdict is "
-                f"{final_status!r}, not the model's own report -- see the "
-                f"posted review comment for findings"
-            )
+            # Inlined rather than calling _review_outcome_lacks_durable_artefact():
+            # that helper gates on step_result.outcome, the model's own
+            # self-reported outcome -- which in this branch is exactly what
+            # outcome_policy just overrode, so it is never STATUS_REVIEW here.
+            # final_status (the code-computed verdict) is the only correct
+            # thing to check.
+            if (
+                final_status == STATUS_REVIEW
+                and step_result is not None
+                and not step_result.body_write
+                and not (_posted and bool(step_result.output))
+            ):
+                final_status = STATUS_FAILED
+                sentinel_message = (
+                    f"{agent_def.agent} outcome overridden to 'review' but left no durable "
+                    f"record of what it found -- "
+                    + ("its artefact comment could not be posted"
+                       if step_result and step_result.output
+                       else "it wrote no output and no body_write")
+                    + "; a human gate cannot approve content nobody can see"
+                )
+            else:
+                # sentinel_message still holds the model's own stale advisory
+                # text (e.g. "Verdict (advisory): APPROVE.") -- without this,
+                # the closing-announcement audit-trail comment would pair the
+                # corrected outcome with that stale, now-wrong summary.
+                sentinel_message = (
+                    f"outcome_policy override: code-computed verdict is "
+                    f"{final_status!r}, not the model's own report -- see the "
+                    f"posted review comment for findings"
+                )
     elif agent_def.review_gate and step_result is not None:
         _verdict_mismatch = _check_review_verdict_consistency(final_status, step_result.verdict)
         if _verdict_mismatch:
