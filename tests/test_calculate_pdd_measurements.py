@@ -493,24 +493,8 @@ class TestPipelineIntegration:
         append_ok.stderr = ""
 
         written_records: list[dict] = []
-
-        def capture_append(cmd, **kwargs):
-            if "append-metrics-record.sh" in str(cmd):
-                record_path = cmd[-1]
-                with open(record_path) as f:
-                    written_records.append(json.loads(f.read().strip()))
-                return append_ok
-            if cmd[0] == "gh":
-                call_num = len([r for r in written_records])
-                if call_num == 0:
-                    return fetch_resp
-                return parent_resp
-            return append_ok
-
-        import calculate_pdd_measurements as mod
         orig_run = subprocess.run
-
-        fetch_calls = []
+        fetch_calls: list = []
 
         def side_effect_run(cmd, **kwargs):
             if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:

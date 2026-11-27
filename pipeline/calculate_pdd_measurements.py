@@ -379,7 +379,7 @@ def main() -> None:
         "timestamp_start": timestamp_start,
         "timestamp_end": timestamp_end,
         "agent_id": AGENT_ID,
-        "cycle_id": str(uuid.uuid4()),
+        "cycle_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"pdd-measurements/issue-{args.issue}")),
         "duration_ms": duration_ms,
         "input_tokens": 0,
         "output_tokens": 0,
