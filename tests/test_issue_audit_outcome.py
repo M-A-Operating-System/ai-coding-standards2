@@ -1,4 +1,4 @@
-"""Tests for pipeline/issue_audit_outcome.py (issue #743).
+"""Tests for pipeline/issue_audit_outcome.py (issue #743, issue #745).
 
 Gherkin scenarios traced (issue #743):
   - Valid audit object passes schema validation
@@ -9,6 +9,15 @@ Gherkin scenarios traced (issue #743):
   - Verdict SUPERSEDED-BY-#N when a superseding issue is cited
   - Verdict NEEDS-HUMAN-REVIEW for conflicting evidence
   - Batch selection interleaves never-reviewed and reviewed issues by single age key
+
+Gherkin scenarios traced (issue #745):
+  - OBSOLETE verdict at threshold: highest-confidence closing-type item selected
+  - SUPERSEDED-BY-#N verdict at threshold: superseding-number extraction and
+    highest-confidence superseding-issue item selected
+  - Schema validation rejects a verdict with a missing citation (merged-fix)
+  - Schema validation rejects a verdict with a missing citation (superseding-issue)
+  - OBSOLETE verdict below the confidence threshold does not auto-close (returns NEEDS-HUMAN-REVIEW)
+  - STILL-VALID verdict leaves the issue open (no closing evidence above threshold)
 """
 import json
 import sys
@@ -21,12 +30,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 from issue_audit_outcome import (
     CLOSING_THRESHOLD,
+    CLOSING_TYPES,
     NEEDS_HUMAN_REVIEW,
     OBSOLETE,
     STILL_VALID,
     batch_sort_key,
     derive_audit_verdict,
     select_batch,
+    select_top_evidence,
 )
 
 SCHEMA_PATH = Path(__file__).parent.parent / "pipeline" / "schemas" / "issue-audit.schema.json"
@@ -90,6 +101,22 @@ class TestSchema:
         jsonschema = pytest.importorskip("jsonschema")
         validator = jsonschema.Draft7Validator(_schema())
         errors = list(validator.iter_errors({"issue_number": 1}))
+        assert errors != []
+
+    def test_merged_fix_without_citation_fails(self):
+        """merged-fix is a closing type; schema must reject it without citation (issue #745)."""
+        jsonschema = pytest.importorskip("jsonschema")
+        validator = jsonschema.Draft7Validator(_schema())
+        item = {"type": "merged-fix", "confidence": 0.9, "excerpt": "PR #42 merged"}
+        errors = list(validator.iter_errors(_audit([item])))
+        assert errors != []
+
+    def test_superseding_issue_without_citation_fails(self):
+        """superseding-issue is a closing type; schema must reject it without citation (issue #745)."""
+        jsonschema = pytest.importorskip("jsonschema")
+        validator = jsonschema.Draft7Validator(_schema())
+        item = {"type": "superseding-issue", "confidence": 0.9, "excerpt": "covered by #800"}
+        errors = list(validator.iter_errors(_audit([item])))
         assert errors != []
 
 
@@ -268,3 +295,46 @@ class TestBatchSelection:
         """Labels may come as dicts with a 'name' key (GitHub API format)."""
         issue = self._issue(5, "2023-01-01", labels=[{"name": self._reviewed_label("2024-04-01")}])
         assert batch_sort_key(issue) == "2024-04-01"
+
+
+class TestSelectTopEvidence:
+    """issue #745 scenarios 1 and 2: the evidence-selection logic the
+    OBSOLETE and SUPERSEDED-BY-#N auto-close actions use to pick which
+    evidence item's citation/excerpt to cite in the closing comment."""
+
+    def test_obsolete_selects_highest_confidence_closing_type_item(self):
+        """Scenario 1: given evidence including a code-removed item at 0.9,
+        the highest-confidence closing-type item is correctly identified."""
+        evidence = [
+            {"type": "code-removed", "confidence": 0.9, "citation": "foo.py:10", "excerpt": "removed"},
+            {"type": "merged-fix", "confidence": 0.86, "citation": "#100", "excerpt": "fixed"},
+            {"type": "contradicted", "confidence": 0.5, "citation": "bar.py:5", "excerpt": "still there"},
+        ]
+        top = select_top_evidence(evidence, CLOSING_TYPES)
+        assert top["citation"] == "foo.py:10"
+        assert top["confidence"] == 0.9
+
+    def test_superseded_selects_highest_confidence_superseding_issue_item(self):
+        """Scenario 2: given a verdict string 'SUPERSEDED-BY-#754' and a
+        superseding-issue evidence item, the superseding number is correctly
+        extracted (mirroring the agent's own regex) and the highest-confidence
+        superseding-issue item is returned."""
+        import re
+        verdict = "SUPERSEDED-BY-#754"
+        m = re.search(r"(\d+)", verdict)
+        assert m.group(1) == "754"
+
+        evidence = [
+            {"type": "superseding-issue", "confidence": 0.9, "citation": "754", "excerpt": "supersedes this"},
+            {"type": "superseding-issue", "confidence": 0.86, "citation": "754", "excerpt": "weaker signal"},
+            {"type": "code-removed", "confidence": 0.95, "citation": "foo.py:1", "excerpt": "unrelated"},
+        ]
+        top = select_top_evidence(evidence, {"superseding-issue"})
+        assert top["confidence"] == 0.9
+        assert top["excerpt"] == "supersedes this"
+
+    def test_raises_when_no_item_qualifies(self):
+        """RV-002: an explicit, named error rather than a bare max() crash
+        when the evidence is inconsistent with the expected verdict."""
+        with pytest.raises(ValueError):
+            select_top_evidence([{"type": "contradicted", "confidence": 0.9}], CLOSING_TYPES)

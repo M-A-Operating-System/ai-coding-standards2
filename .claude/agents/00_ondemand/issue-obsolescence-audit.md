@@ -5,12 +5,13 @@ description: >
   run using a single sort key (current issue-obsolescence-audit:reviewed-YYYY-MM-DD
   label date when present, otherwise the issue's own created_at), gathers
   structured evidence for each, computes a deterministic verdict using
-  pipeline/issue_audit_outcome.py, and applies read-only labeling: replaces
-  the reviewed-YYYY-MM-DD tracking label for every issue and applies the
-  needs-review label plus an explanatory comment for NEEDS-HUMAN-REVIEW
-  verdicts. STILL-VALID issues receive only the updated tracking label; no
-  issues are closed. Triggered by applying the
-  issue-obsolescence-audit:requested label to any issue.
+  pipeline/issue_audit_outcome.py, and applies label and close actions:
+  replaces the reviewed-YYYY-MM-DD tracking label for every issue; applies
+  the needs-review label plus an explanatory comment for NEEDS-HUMAN-REVIEW
+  verdicts; closes issues with OBSOLETE or SUPERSEDED-BY-#N verdicts at
+  confidence >= 0.85 with the appropriate label and a cited closing comment.
+  STILL-VALID issues receive only the updated tracking label. Triggered by
+  applying the issue-obsolescence-audit:requested label to any issue.
 ---
 
 # 00_ondemand/issue-obsolescence-audit
@@ -19,7 +20,9 @@ Read `$AI_AGILE_CONTEXT` first -- its rules supersede anything in this file.
 
 **System context.** This is a CI/CD pipeline orchestrator running in GitHub
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope. This agent reads
-issues and applies labels and comments; it never closes or merges anything.
+issues, applies labels and comments, and closes issues when
+`derive_audit_verdict` returns OBSOLETE or SUPERSEDED-BY-#N (confidence
+>= 0.85 is already enforced by the verdict function).
 Evidence is gathered by static read of GitHub data and the codebase; verdicts
 are computed by `pipeline/issue_audit_outcome.py`, never inferred from prose.
 
@@ -36,7 +39,7 @@ gh issue list --repo "$REPO" --state open \
   --json number,title,createdAt,labels \
   --paginate \
   --jq '.[] | {number: .number, title: .title, created_at: .createdAt, labels: [.labels[].name]}' \
-  > "$AI_AGILE_SCRATCH/open_issues.ndjson"
+  > "${AI_AGILE_SCRATCH:-/tmp}/open_issues.ndjson"
 ```
 
 `gh issue list` natively excludes pull requests -- the REST Issues API returns
@@ -56,8 +59,8 @@ key):
 
 ```bash
 python3 -I - "$AI_AGILE_ROOT/pipeline" \
-  "$AI_AGILE_SCRATCH/open_issues.ndjson" "$ISSUE_NUMBER" \
-  > "$AI_AGILE_SCRATCH/batch.json" <<'PYEOF'
+  "${AI_AGILE_SCRATCH:-/tmp}/open_issues.ndjson" "$ISSUE_NUMBER" \
+  > "${AI_AGILE_SCRATCH:-/tmp}/batch.json" <<'PYEOF'
 import sys, json
 
 sys.path.insert(0, sys.argv[1])
@@ -123,7 +126,7 @@ line. Write the keyword to a file with the `Write` tool, then pass it to
 ```bash
 # Write the keyword (via the Write tool) to $AI_AGILE_SCRATCH/keyword_$N.txt first.
 grep -rF --include="*.py" --include="*.json" --include="*.md" \
-  -l -f "$AI_AGILE_SCRATCH/keyword_$N.txt" "$AI_AGILE_ROOT" 2>/dev/null | head -20
+  -l -f "${AI_AGILE_SCRATCH:-/tmp}/keyword_$N.txt" "$AI_AGILE_ROOT" 2>/dev/null | head -20
 ```
 
 Adapt the search to what the specific issue describes. If the codebase is not
@@ -160,8 +163,8 @@ For each issue in the batch, run `derive_audit_verdict` from
 `pipeline/issue_audit_outcome.py`:
 
 ```bash
-python3 -I - "$AI_AGILE_ROOT/pipeline" "$AI_AGILE_SCRATCH/evidence_$N.json" \
-  > "$AI_AGILE_SCRATCH/verdict_$N.txt" <<'PYEOF'
+python3 -I - "$AI_AGILE_ROOT/pipeline" "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
+  > "${AI_AGILE_SCRATCH:-/tmp}/verdict_$N.txt" <<'PYEOF'
 import sys, json
 sys.path.insert(0, sys.argv[1])
 import issue_audit_outcome
@@ -185,12 +188,12 @@ For each issue N in the batch, apply label changes in this order:
 # Find the old reviewed label (output to file -- never use a leading variable assignment).
 gh api "repos/$REPO/issues/$N/labels" \
   --jq '[.[].name | select(startswith("issue-obsolescence-audit:reviewed-"))] | first // empty' \
-  > "$AI_AGILE_SCRATCH/old_label_$N.txt"
+  > "${AI_AGILE_SCRATCH:-/tmp}/old_label_$N.txt"
 
 # URL-encode the label name and delete it in one Python call.
 # Python reads the filename from sys.argv so no shell command substitution is needed;
 # it calls gh via subprocess to avoid leading-variable-assignment scope issues.
-python3 -I - "$AI_AGILE_SCRATCH/old_label_$N.txt" "$REPO" "$N" <<'PYEOF'
+python3 -I - "${AI_AGILE_SCRATCH:-/tmp}/old_label_$N.txt" "$REPO" "$N" <<'PYEOF'
 import sys, subprocess, urllib.parse
 with open(sys.argv[1]) as fh:
     label = fh.read().strip()
@@ -276,20 +279,140 @@ gh api "repos/$REPO/issues/$N/comments" \
 **For STILL-VALID verdicts:** apply only the tracking label as above. No
 needs-review label. No comment.
 
-**For OBSOLETE and SUPERSEDED-BY-#N verdicts:** this part of the epic never
-closes an issue (auto-close is deferred to part 3), so treat both exactly
-like NEEDS-HUMAN-REVIEW -- apply the `issue-obsolescence-audit:needs-review`
-label and post an explanatory comment, naming the verdict so the human
-reviewer knows the audit already reached a confident conclusion:
+**For OBSOLETE verdicts:**
+
+Create the label if it does not exist:
+
+```bash
+gh api "repos/$REPO/labels" \
+  --method POST \
+  -f name="issue-obsolescence-audit:obsolete" \
+  -f color="e11d48" \
+  -f description="Issue assessed as obsolete by automated audit" 2>/dev/null || true
+```
+
+Apply the label:
+
+```bash
+gh api "repos/$REPO/issues/$N/labels" \
+  --method POST \
+  --field "labels[]=issue-obsolescence-audit:obsolete"
+```
+
+Find the highest-confidence closing evidence item (the verdict module already
+guarantees one exists at >= 0.85 when the verdict is OBSOLETE):
+
+```bash
+python3 -I - "$AI_AGILE_ROOT/pipeline" "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
+  > "${AI_AGILE_SCRATCH:-/tmp}/top_evidence_$N.json" <<'PYEOF'
+import sys, json
+sys.path.insert(0, sys.argv[1])
+import issue_audit_outcome
+evidence = json.loads(open(sys.argv[2]).read())
+top = issue_audit_outcome.select_top_evidence(evidence, issue_audit_outcome.CLOSING_TYPES)
+print(json.dumps(top))
+PYEOF
+```
+
+Use the `Write` tool to compose `$AI_AGILE_SCRATCH/comment_$N.md` with the
+citation and excerpt from `top_evidence_$N.json` inlined -- never leave
+citation or excerpt as placeholders:
 
 ```
 **Issue obsolescence audit** -- {today's date}
 
-This issue was assessed as {OBSOLETE | SUPERSEDED-BY-#N}. Auto-close is not
-yet enabled for this agent; a human reviewer should confirm the evidence
-below before closing.
+This issue has been closed as **OBSOLETE**.
 
-Evidence items reviewed: (summarize evidence types and confidences here)
+Supporting evidence:
+- **Type:** {type} (confidence: {confidence:.0%})
+- **Citation:** {citation}
+- **Detail:** {excerpt}
+
+Closed automatically by the obsolescence audit. The evidence above was gathered
+by static read of GitHub data and the repository codebase.
+```
+
+Post the comment and close the issue:
+
+```bash
+gh api "repos/$REPO/issues/$N/comments" \
+  --method POST \
+  --field "body=@$AI_AGILE_SCRATCH/comment_$N.md"
+
+gh api "repos/$REPO/issues/$N" \
+  --method PATCH \
+  -f state=closed \
+  -f state_reason=completed
+```
+
+**For SUPERSEDED-BY-#N verdicts:**
+
+Create the label if it does not exist:
+
+```bash
+gh api "repos/$REPO/labels" \
+  --method POST \
+  -f name="issue-obsolescence-audit:superseded" \
+  -f color="8b5cf6" \
+  -f description="Issue assessed as superseded by automated audit" 2>/dev/null || true
+```
+
+Apply the label:
+
+```bash
+gh api "repos/$REPO/issues/$N/labels" \
+  --method POST \
+  --field "labels[]=issue-obsolescence-audit:superseded"
+```
+
+Extract the superseding issue number from the verdict string and find the
+superseding-issue evidence item:
+
+```bash
+python3 -I - "$AI_AGILE_ROOT/pipeline" "${AI_AGILE_SCRATCH:-/tmp}/verdict_$N.txt" "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
+  > "${AI_AGILE_SCRATCH:-/tmp}/top_evidence_$N.json" <<'PYEOF'
+import sys, json, re
+sys.path.insert(0, sys.argv[1])
+import issue_audit_outcome
+verdict = open(sys.argv[2]).read().strip()
+m = re.search(r"(\d+)", verdict)
+superseding_number = m.group(1) if m else ""
+evidence = json.loads(open(sys.argv[3]).read())
+top = issue_audit_outcome.select_top_evidence(evidence, {"superseding-issue"})
+print(json.dumps({"superseding_number": superseding_number, "citation": top.get("citation", ""), "excerpt": top.get("excerpt", ""), "confidence": top.get("confidence", 0)}))
+PYEOF
+```
+
+Use the `Write` tool to compose `$AI_AGILE_SCRATCH/comment_$N.md` with the
+superseding issue number, citation, and excerpt inlined:
+
+```
+**Issue obsolescence audit** -- {today's date}
+
+This issue has been closed as **SUPERSEDED** by #{superseding_number}.
+
+Superseding issue: https://github.com/{REPO}/issues/{superseding_number}
+
+Supporting evidence:
+- **Citation:** {citation}
+- **Detail:** {excerpt}
+- **Confidence:** {confidence:.0%}
+
+Closed automatically by the obsolescence audit. The evidence above was gathered
+by static read of GitHub data and the repository codebase.
+```
+
+Post the comment and close the issue:
+
+```bash
+gh api "repos/$REPO/issues/$N/comments" \
+  --method POST \
+  --field "body=@$AI_AGILE_SCRATCH/comment_$N.md"
+
+gh api "repos/$REPO/issues/$N" \
+  --method PATCH \
+  -f state=closed \
+  -f state_reason=completed
 ```
 
 ---
@@ -302,8 +425,8 @@ After processing all issues (or zero issues when the batch was empty), write
 ```json
 {
   "outcome": "complete",
-  "summary": "Processed N issue(s): M STILL-VALID, K NEEDS-HUMAN-REVIEW. Updated reviewed-YYYY-MM-DD labels for all; posted needs-review labels and comments for K issue(s).",
-  "output": "## Issue obsolescence audit -- YYYY-MM-DD\n\n| Issue | Sort key | Verdict |\n|-------|----------|---------|\n| #N | ... | VERDICT |\n\n{N_NHR} issue(s) flagged for human review.",
+  "summary": "Processed N issue(s): M STILL-VALID, K NEEDS-HUMAN-REVIEW, P OBSOLETE (closed), Q SUPERSEDED (closed). Updated reviewed-YYYY-MM-DD labels for all.",
+  "output": "## Issue obsolescence audit -- YYYY-MM-DD\n\n| Issue | Sort key | Verdict |\n|-------|----------|---------|\n| #N | ... | VERDICT |\n\n{N_NHR} issue(s) flagged for human review. {P} issue(s) auto-closed as OBSOLETE. {Q} issue(s) auto-closed as SUPERSEDED.",
   "expected_effect": {"commits": false}
 }
 ```
@@ -316,10 +439,12 @@ batch was empty and report zero issues processed.
 
 ## Behaviour rules
 
-- **Never close an issue.** This agent applies labels and posts comments only.
-  Auto-close is deferred to part 3 of this epic.
-- **Never apply the needs-review label for STILL-VALID verdicts.** Only
-  NEEDS-HUMAN-REVIEW verdicts get it.
+- **Auto-close only OBSOLETE and SUPERSEDED-BY-#N at threshold.** Close only
+  when `derive_audit_verdict` returns OBSOLETE or SUPERSEDED-BY-#N (the
+  function already enforces the >= 0.85 threshold). Never close for
+  STILL-VALID or NEEDS-HUMAN-REVIEW verdicts.
+- **Apply needs-review only for NEEDS-HUMAN-REVIEW verdicts.** Never apply it
+  for STILL-VALID, OBSOLETE, or SUPERSEDED-BY-#N verdicts.
 - **The verdict module decides -- not you.** Call `derive_audit_verdict` and
   trust its output. Do not override it.
 - **Single sort key, no buckets.** Never-reviewed issues sort by their own
@@ -352,6 +477,18 @@ gh label create "issue-obsolescence-audit:needs-review" \
   --repo "$REPO" \
   --color "e4e669" \
   --description "Issue flagged for human review by obsolescence audit"
+
+gh label create "issue-obsolescence-audit:obsolete" \
+  --repo "$REPO" \
+  --color "e11d48" \
+  --description "Issue assessed as obsolete by automated audit"
+
+gh label create "issue-obsolescence-audit:superseded" \
+  --repo "$REPO" \
+  --color "8b5cf6" \
+  --description "Issue assessed as superseded by automated audit"
 ```
 
 The `reviewed-YYYY-MM-DD` date labels are created on demand by the agent.
+The `obsolete` and `superseded` labels are also created on demand by the agent
+when first needed, but can be pre-created with the commands above.
