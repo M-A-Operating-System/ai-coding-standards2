@@ -303,13 +303,13 @@ Find the highest-confidence closing evidence item (the verdict module already
 guarantees one exists at >= 0.85 when the verdict is OBSOLETE):
 
 ```bash
-python3 -I - "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
+python3 -I - "$AI_AGILE_ROOT/pipeline" "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
   > "${AI_AGILE_SCRATCH:-/tmp}/top_evidence_$N.json" <<'PYEOF'
 import sys, json
-evidence = json.loads(open(sys.argv[1]).read())
-CLOSING_TYPES = {"code-removed", "code-changed", "merged-fix"}
-items = [i for i in evidence if i.get("type") in CLOSING_TYPES and i.get("confidence", 0) >= 0.85]
-top = max(items, key=lambda i: i.get("confidence", 0))
+sys.path.insert(0, sys.argv[1])
+import issue_audit_outcome
+evidence = json.loads(open(sys.argv[2]).read())
+top = issue_audit_outcome.select_top_evidence(evidence, issue_audit_outcome.CLOSING_TYPES)
 print(json.dumps(top))
 PYEOF
 ```
@@ -369,15 +369,16 @@ Extract the superseding issue number from the verdict string and find the
 superseding-issue evidence item:
 
 ```bash
-python3 -I - "${AI_AGILE_SCRATCH:-/tmp}/verdict_$N.txt" "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
+python3 -I - "$AI_AGILE_ROOT/pipeline" "${AI_AGILE_SCRATCH:-/tmp}/verdict_$N.txt" "${AI_AGILE_SCRATCH:-/tmp}/evidence_$N.json" \
   > "${AI_AGILE_SCRATCH:-/tmp}/top_evidence_$N.json" <<'PYEOF'
 import sys, json, re
-verdict = open(sys.argv[1]).read().strip()
+sys.path.insert(0, sys.argv[1])
+import issue_audit_outcome
+verdict = open(sys.argv[2]).read().strip()
 m = re.search(r"(\d+)", verdict)
 superseding_number = m.group(1) if m else ""
-evidence = json.loads(open(sys.argv[2]).read())
-items = [i for i in evidence if i.get("type") == "superseding-issue" and i.get("confidence", 0) >= 0.85]
-top = max(items, key=lambda i: i.get("confidence", 0))
+evidence = json.loads(open(sys.argv[3]).read())
+top = issue_audit_outcome.select_top_evidence(evidence, {"superseding-issue"})
 print(json.dumps({"superseding_number": superseding_number, "citation": top.get("citation", ""), "excerpt": top.get("excerpt", ""), "confidence": top.get("confidence", 0)}))
 PYEOF
 ```

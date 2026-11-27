@@ -14,7 +14,7 @@ NEEDS_HUMAN_REVIEW = "NEEDS-HUMAN-REVIEW"
 
 CLOSING_THRESHOLD = 0.85
 
-_CLOSING_TYPES = frozenset({"code-removed", "code-changed", "merged-fix"})
+CLOSING_TYPES = frozenset({"code-removed", "code-changed", "merged-fix"})
 
 
 def _superseded_verdict(citation: str) -> str:
@@ -39,7 +39,7 @@ def derive_audit_verdict(evidence: list) -> str:
        item below 0.85, and unverifiable items with no competing signal.
     """
     has_closing = any(
-        item.get("type") in _CLOSING_TYPES
+        item.get("type") in CLOSING_TYPES
         and item.get("confidence", 0) >= CLOSING_THRESHOLD
         for item in evidence
     )
@@ -70,6 +70,24 @@ def derive_audit_verdict(evidence: list) -> str:
         return STILL_VALID
 
     return NEEDS_HUMAN_REVIEW
+
+
+def select_top_evidence(evidence: list, types: frozenset, min_confidence: float = CLOSING_THRESHOLD) -> dict:
+    """Return the highest-confidence item of the given type(s) at or above
+    min_confidence (issue #745's OBSOLETE/SUPERSEDED-BY-#N auto-close actions
+    use this to pick which evidence item's citation/excerpt to cite in the
+    closing comment). Raises ValueError, naming the expected types, if none
+    qualifies -- this should never happen when called on evidence that
+    already produced the corresponding verdict from derive_audit_verdict, so
+    a raise here means the two have gone out of sync, not a normal outcome.
+    """
+    items = [
+        item for item in evidence
+        if item.get("type") in types and item.get("confidence", 0) >= min_confidence
+    ]
+    if not items:
+        raise ValueError(f"no evidence item of type {sorted(types)} at or above {min_confidence}")
+    return max(items, key=lambda i: i.get("confidence", 0))
 
 
 def batch_sort_key(issue: dict) -> str:
