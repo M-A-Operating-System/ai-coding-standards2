@@ -7743,6 +7743,12 @@ def _apply_result(
         _outcome_policy_applied = True
         _posted = _post_artefact_if_present(gh, agent_def, work_item, step_result)
         if _outcome_overridden:
+            # Inlined rather than calling _review_outcome_lacks_durable_artefact():
+            # that helper gates on step_result.outcome, the model's own
+            # self-reported outcome -- which in this branch is exactly what
+            # outcome_policy just overrode, so it is never STATUS_REVIEW here.
+            # final_status (the code-computed verdict) is the only correct
+            # thing to check.
             if (
                 final_status == STATUS_REVIEW
                 and step_result is not None

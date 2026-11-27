@@ -33,6 +33,7 @@ from pipeline_orchestrator import (
     _remove_run_worktree,
     promote_gated_agents,
     AgentDef, AgentRunResult, ComponentClaims, WorkItem,
+    StepResult,
     parse_frontmatter,
     process_work_item,
     _compute_agent_session_id,
@@ -7229,4 +7230,49 @@ class TestOutcomeOverriddenEmptyArtefactFailed:
         assert "pr-reviewer:failed" not in applied, (
             f"outcome_overridden review with successful artefact posting must not "
             f"apply :failed; got: {applied}"
+        )
+
+    @patch("pipeline_orchestrator._apply_outcome_policy")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_vacuous_success_in_outcome_overridden_path_applies_failed(
+        self, mock_invoke, mock_policy,
+    ):
+        """Scenario: empty-output outcome_overridden review triggers STATUS_FAILED
+        via the vacuous-success path (issue #731's original bug scenario).
+
+        _post_artefact_if_present returns True both when posting succeeds
+        and when there is nothing to post (step_result.output falsy) --
+        rendered findings never actually come out empty (render_review_comment
+        always emits at least a header), so this path is reached only via a
+        directly-crafted rendered StepResult, as here. Given the artefact was
+        "posted" only because there was nothing to post (_posted=True) and
+        output is falsy and there is no body_write, the safeguard must still
+        apply STATUS_FAILED -- not treat the vacuous True as proof a human has
+        something to act on.
+        """
+        mock_invoke.side_effect = self._write_complete_with_blocking_findings()
+        rendered = StepResult(outcome=STATUS_COMPLETE, summary="looks good", output="")
+        mock_policy.return_value = (
+            STATUS_REVIEW, rendered, "", True, False, [], False, None,
+        )
+        agent = self._pr_reviewer_agent()
+        gh = _make_gh_mock()
+        gh.list_comment_bodies = MagicMock(return_value=[])
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+
+        wi = _make_work_item_with_labels(42, {"pr-reviewer:requested"})
+        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "pr-reviewer:failed" in applied, (
+            f"expected pr-reviewer:failed for the vacuous-success case (empty "
+            f"output, no body_write) in the outcome_overridden path; got: {applied}"
+        )
+        assert "pr-reviewer:review" not in applied, (
+            "a vacuously-posted empty artefact must not be treated as :review"
+        )
+        posted_bodies = [c.args[1] for c in gh.post_comment.call_args_list]
+        assert not any("ai-agile/artefact/v1" in b for b in posted_bodies), (
+            "there is no output to post, so no artefact comment should be attempted"
         )
