@@ -170,6 +170,23 @@
         },
 
         {
+          "agent": "01_product_docs/pdd-measurements",
+          "type": "script",
+          "script": "scripts/pdd-measurements.sh",
+          "phase": "01_product_docs",
+          "trigger": {
+            "label": "prd-writer:approved"
+          },
+          "human_gate_after": false,
+          "dependencies": ["01_product_docs/prd-writer"],
+          "max_retries": 1,
+          "exclude_labels": ["epic", "blocked"],
+          "stopOnLevel": 2,
+          "expected_effect": { "commits": false },
+          "description": "Scripted step (issue #760, part 2 of #507): runs on prd-writer:approved approval. Parses the Gherkin acceptance criteria from the approved issue, counts scenarios and step keywords, and appends one pdd_measurements record to ai-agile/metrics:records.jsonl. Emits AI_AGILE_STATUS: complete on success, blocked on malformed Gherkin or reconciliation failure. Skipped for epic/blocked issues."
+        },
+
+        {
           "agent": "01_product_docs/create-docs-pr",
           "type": "script",
           "script": "scripts/create-docs-pr.sh",

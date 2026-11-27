@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Gherkin section parser for PDD measurement collection (issue #759, part 1 of #507).
+"""Gherkin section parser and PDD metrics recorder (issue #759 / #760, parts 1-2 of #507).
 
 Reads an issue body, locates the '## Acceptance criteria (Gherkin)' section,
-extracts scenarios and step lines, counts keywords by type, and produces a
-validated raw measurement JSON object on stdout.
+extracts scenarios and step lines, counts keywords by type, produces a
+validated raw measurement JSON object, and appends one pdd_measurements record
+to the ai-agile/metrics ledger via scripts/append-metrics-record.sh.
 
 Usage:
     python pipeline/calculate_pdd_measurements.py --issue <N>
 
 The issue must carry 'prd-writer:approved'. On success, prints JSON to stdout
 and 'AI_AGILE_STATUS: complete'. On failure, prints a message to stderr and
-'AI_AGILE_STATUS: blocked'.
+'AI_AGILE_STATUS: blocked'. When 'prd-writer:approved' is absent the script
+exits cleanly without appending any record.
 """
 
 from __future__ import annotations
@@ -21,9 +23,16 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
+import uuid
 from typing import NoReturn
 
 METRIC_VERSION = "pdd-measures-v1"
+AGENT_ID = "01_product_docs/pdd-measurements"
+METRICS_BRANCH = "ai-agile/metrics"
+METRICS_RECORDS_FILE = "records.jsonl"
+CYCLE_ID_NAMESPACE = uuid.UUID("f96a0519-a2fa-4d2e-a5ce-dfc64c3440ae")
 
 GHERKIN_SECTION_HEADING = "## Acceptance criteria (Gherkin)"
 USER_STORIES_HEADING_RE = re.compile(r"^#{1,6}\s+User stories\s*$", re.IGNORECASE)
@@ -204,12 +213,183 @@ def _fail(message: str) -> NoReturn:
     sys.exit(1)
 
 
+def _skip(message: str) -> NoReturn:
+    print(message, file=sys.stderr)
+    print("AI_AGILE_STATUS: complete", file=sys.stderr, flush=True)
+    sys.exit(0)
+
+
+def _extract_classification(labels: list[str]) -> str | None:
+    for lbl in labels:
+        if lbl.startswith("classification: "):
+            return lbl[len("classification: "):]
+    return None
+
+
+def _extract_parent_issue_number(labels: list[str]) -> int | None:
+    for lbl in labels:
+        if lbl.startswith("parent-issue:"):
+            try:
+                return int(lbl[len("parent-issue:"):])
+            except ValueError:
+                pass
+    return None
+
+
+def _compute_hierarchy(
+    labels: list[str],
+) -> tuple[int | None, int | None, int | None]:
+    """Return (parent_issue_number, root_issue_number, decomposition_depth).
+
+    Traverses the parent chain by fetching parent issues until a root is found.
+    Returns (None, None, None) when the issue has no parent-issue label.
+    Returns (parent_issue_number, None, None) if a mid-chain fetch fails --
+    the immediate parent is known but the root and depth could not be resolved.
+    """
+    parent_num = _extract_parent_issue_number(labels)
+    if parent_num is None:
+        return None, None, None
+
+    depth = 1
+    root_num = parent_num
+    current_num = parent_num
+    seen: set[int] = set()
+
+    while True:
+        if current_num in seen:
+            break
+        seen.add(current_num)
+        try:
+            parent_issue = _fetch_issue(current_num)
+        except (subprocess.CalledProcessError, RuntimeError):
+            print(
+                f"WARNING: hierarchy traversal incomplete at issue #{current_num} -- "
+                "root_issue_number and decomposition_depth may be wrong",
+                file=sys.stderr,
+            )
+            return parent_num, None, None
+        parent_labels = [lbl["name"] for lbl in parent_issue.get("labels", [])]
+        grandparent = _extract_parent_issue_number(parent_labels)
+        if grandparent is None:
+            break
+        root_num = grandparent
+        current_num = grandparent
+        depth += 1
+
+    return parent_num, root_num, depth
+
+
+def _ledger_has_cycle_id(cycle_id: str, env: dict) -> bool:
+    """Return True if cycle_id already exists in the metrics ledger.
+
+    Fetches the metrics branch first: a standard CI checkout has no local ref
+    for this orphan branch, so `git show origin/{branch}:...` would otherwise
+    fail every time on a fresh runner and silently return False, defeating
+    the whole point of this dedup check (same pattern as read_metrics_records
+    in pipeline_orchestrator.py).
+    """
+    fetch = subprocess.run(
+        ["git", "fetch", "origin", METRICS_BRANCH],
+        capture_output=True, text=True, env=env,
+    )
+    if fetch.returncode != 0:
+        return False
+    result = subprocess.run(
+        ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
+        capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            if rec.get("cycle_id") == cycle_id:
+                return True
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return False
+
+
+def _append_metrics_record(record: dict) -> None:
+    """Write one record line to the metrics ledger via append-metrics-record.sh.
+
+    Raises RuntimeError when the write did not land (exit non-zero).
+    """
+    ai_agile_root = os.environ.get("AI_AGILE_ROOT", "")
+    if ai_agile_root:
+        script = os.path.join(ai_agile_root, "scripts", "append-metrics-record.sh")
+    else:
+        script = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "scripts", "append-metrics-record.sh",
+        )
+
+    if not os.path.isfile(script):
+        raise RuntimeError(f"append-metrics-record.sh not found at {script}")
+
+    record_line = json.dumps(record, separators=(",", ":")) + "\n"
+    commit_message = (
+        f"metrics: {record.get('agent_id', 'step')} "
+        f"on #{record.get('github_issue_number')}"
+    )
+
+    env = {}
+    for key in ("PATH", "HOME", "GH_TOKEN", "GITHUB_TOKEN",
+                "AI_AGILE_BOT_TOKEN", "LANG", "LC_ALL", "LC_CTYPE",
+                "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+                "http_proxy", "https_proxy", "no_proxy",
+                "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+                "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE"):
+        val = os.environ.get(key)
+        if val is not None:
+            env[key] = val
+    env["AI_AGILE_METRICS_BRANCH"] = METRICS_BRANCH
+    env["AI_AGILE_METRICS_FILE"] = METRICS_RECORDS_FILE
+    env["AI_AGILE_METRICS_COMMIT_MESSAGE"] = commit_message
+
+    cycle_id = record.get("cycle_id", "")
+    if cycle_id and _ledger_has_cycle_id(cycle_id, env):
+        print(
+            f"WARNING: cycle_id {cycle_id!r} already in ledger; skipping duplicate append",
+            file=sys.stderr,
+        )
+        return
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".jsonl", delete=False, encoding="utf-8",
+    ) as record_file:
+        record_file.write(record_line)
+        record_path = record_file.name
+    try:
+        result = subprocess.run(
+            ["bash", script, record_path],
+            env=env, capture_output=True, text=True, timeout=300,
+        )
+    finally:
+        try:
+            os.unlink(record_path)
+        except OSError:
+            pass
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"append-metrics-record.sh exited {result.returncode}: "
+            f"{(result.stderr or result.stdout).strip()[:500]}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Parse Gherkin section from an issue and output PDD measurements."
+        description="Parse Gherkin section from an issue and write PDD measurements."
     )
     parser.add_argument("--issue", type=int, required=True, help="GitHub issue number")
     args = parser.parse_args()
+
+    timestamp_start = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    start_ms = time.monotonic()
 
     try:
         issue = _fetch_issue(args.issue)
@@ -218,9 +398,8 @@ def main() -> None:
 
     labels = [lbl["name"] for lbl in issue.get("labels", [])]
     if "prd-writer:approved" not in labels:
-        _fail(
-            f"issue #{args.issue} does not carry 'prd-writer:approved' "
-            f"(labels: {labels})"
+        _skip(
+            f"issue #{args.issue} does not carry 'prd-writer:approved'; skipping"
         )
 
     body = issue.get("body") or ""
@@ -237,6 +416,41 @@ def main() -> None:
     user_stories = _extract_user_stories_count(body)
     measurements["user_stories"] = user_stories
     measurements["metric_version"] = METRIC_VERSION
+
+    timestamp_end = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    duration_ms = int((time.monotonic() - start_ms) * 1000)
+
+    parent_issue_number, root_issue_number, decomposition_depth = _compute_hierarchy(labels)
+    classification = _extract_classification(labels)
+
+    record: dict = {
+        "record_type": "pdd_measurements",
+        "github_issue_number": args.issue,
+        "timestamp_start": timestamp_start,
+        "timestamp_end": timestamp_end,
+        "agent_id": AGENT_ID,
+        "cycle_id": str(uuid.uuid5(CYCLE_ID_NAMESPACE, f"pdd-measurements/issue-{args.issue}")),
+        "duration_ms": duration_ms,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+        "classification": classification,
+    }
+    if parent_issue_number is not None:
+        record["parent_issue_number"] = parent_issue_number
+        record["root_issue_number"] = root_issue_number
+        record["decomposition_depth"] = decomposition_depth
+    else:
+        record["parent_issue_number"] = None
+        record["root_issue_number"] = None
+        record["decomposition_depth"] = None
+    record.update(measurements)
+
+    try:
+        _append_metrics_record(record)
+    except RuntimeError as exc:
+        _fail(f"failed to write metrics record: {exc}")
 
     print(json.dumps(measurements, indent=2))
     print("AI_AGILE_STATUS: complete", file=sys.stderr, flush=True)

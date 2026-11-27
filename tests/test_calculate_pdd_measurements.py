@@ -1,4 +1,4 @@
-"""Tests for pipeline/calculate_pdd_measurements.py (issue #759).
+"""Tests for pipeline/calculate_pdd_measurements.py (issue #759 / #760).
 
 Realises the Gherkin scenarios in
 docs/features/gherkin-parser-section-extraction-and-step-counting.md:
@@ -31,12 +31,30 @@ docs/features/gherkin-parser-section-extraction-and-step-counting.md:
 
   Scenario: Output contains no score, index, band, threshold, or coefficient fields
     -> TestWellFormedInput.test_no_forbidden_fields
+
+docs/features/pdd-measurement-pipeline-integration-and-schema-extension.md:
+
+  Scenario: Script skips execution when approval label is absent
+    -> TestPipelineIntegration.test_absent_label_exits_cleanly
+
+  Scenario: Script writes complete record and emits success status for approved issue with valid Gherkin
+    -> TestPipelineIntegration.test_approved_writes_record_and_emits_complete
+
+  Scenario: Record includes hierarchy fields for a sub-issue
+    -> TestPipelineIntegration.test_sub_issue_hierarchy_fields_non_null
+
+  Scenario: Script emits blocked status on malformed or missing Gherkin
+    -> TestMainErrors.test_missing_gherkin_section_exits_nonzero
+
+  Scenario: Any reconciliation inconsistency in parsed step counts blocks the step
+    -> TestMalformedInput.test_zero_step_scenario_fails
 """
 
 import sys
 import os
 import json
 import subprocess
+import uuid
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -47,8 +65,13 @@ from calculate_pdd_measurements import (
     _extract_user_stories_count,
     _parse_gherkin_section,
     _validate,
+    _extract_classification,
+    _extract_parent_issue_number,
+    _compute_hierarchy,
     main,
     METRIC_VERSION,
+    AGENT_ID,
+    CYCLE_ID_NAMESPACE,
 )
 
 
@@ -323,14 +346,6 @@ _VALID_BODY = """
 
 
 class TestMainErrors:
-    def test_missing_approved_label_exits_nonzero(self):
-        mock_resp = _make_issue_response(_VALID_BODY, labels=["some-other-label"])
-        with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
-            with pytest.raises(SystemExit) as exc_info:
-                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
-                main()
-        assert exc_info.value.code != 0
-
     def test_called_process_error_exits_nonzero(self):
         with patch(
             "calculate_pdd_measurements.subprocess.run",
@@ -341,7 +356,8 @@ class TestMainErrors:
                 main()
         assert exc_info.value.code != 0
 
-    def test_missing_gherkin_section_exits_nonzero(self):
+    def test_missing_gherkin_section_exits_nonzero(self, monkeypatch):
+        monkeypatch.setenv("REPO", "owner/repo")
         body_no_gherkin = "## Some other section\n\nContent without Gherkin.\n"
         mock_resp = _make_issue_response(body_no_gherkin)
         with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
@@ -356,3 +372,291 @@ class TestMainErrors:
             sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
             main()
         assert exc_info.value.code != 0
+
+
+class TestHierarchy:
+    def test_extract_classification_found(self):
+        labels = ["classification: enhancement", "prd-writer:approved"]
+        assert _extract_classification(labels) == "enhancement"
+
+    def test_extract_classification_missing(self):
+        labels = ["prd-writer:approved", "sub-issue"]
+        assert _extract_classification(labels) is None
+
+    def test_extract_parent_issue_number_found(self):
+        labels = ["parent-issue:507", "sub-issue"]
+        assert _extract_parent_issue_number(labels) == 507
+
+    def test_extract_parent_issue_number_missing(self):
+        labels = ["prd-writer:approved", "classification: enhancement"]
+        assert _extract_parent_issue_number(labels) is None
+
+    def test_compute_hierarchy_root_issue(self):
+        parent, root, depth = _compute_hierarchy(["prd-writer:approved"])
+        assert parent is None
+        assert root is None
+        assert depth is None
+
+    def test_compute_hierarchy_sub_issue(self, monkeypatch):
+        monkeypatch.setenv("REPO", "owner/repo")
+        parent_issue_resp = MagicMock()
+        parent_issue_resp.stdout = json.dumps({
+            "body": "",
+            "labels": [{"name": "classification: enhancement"}],
+        })
+        parent_issue_resp.returncode = 0
+        with patch("calculate_pdd_measurements.subprocess.run", return_value=parent_issue_resp):
+            parent, root, depth = _compute_hierarchy(["parent-issue:507", "sub-issue"])
+        assert parent == 507
+        assert root == 507
+        assert depth == 1
+
+    def test_compute_hierarchy_nested_sub_issue(self, monkeypatch):
+        monkeypatch.setenv("REPO", "owner/repo")
+        grandparent_resp = MagicMock()
+        grandparent_resp.stdout = json.dumps({
+            "body": "",
+            "labels": [{"name": "parent-issue:100"}],
+        })
+        grandparent_resp.returncode = 0
+        root_resp = MagicMock()
+        root_resp.stdout = json.dumps({
+            "body": "",
+            "labels": [{"name": "classification: enhancement"}],
+        })
+        root_resp.returncode = 0
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=[grandparent_resp, root_resp],
+        ):
+            parent, root, depth = _compute_hierarchy(["parent-issue:507"])
+        assert parent == 507
+        assert root == 100
+        assert depth == 2
+
+
+class TestPipelineIntegration:
+    """Realises scenarios in pdd-measurement-pipeline-integration-and-schema-extension.md."""
+
+    def test_absent_label_exits_cleanly(self, monkeypatch):
+        """Scenario: Script skips execution when approval label is absent."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        mock_resp = _make_issue_response(_VALID_BODY, labels=["some-other-label"])
+        with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
+            with pytest.raises(SystemExit) as exc_info:
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+        assert exc_info.value.code == 0
+
+    def test_approved_writes_record_and_emits_complete(self, capsys, monkeypatch):
+        """Scenario: Script writes complete record for approved issue with valid Gherkin."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "classification: enhancement"],
+        )
+
+        git_fetch_miss = MagicMock()
+        git_fetch_miss.returncode = 1
+        git_fetch_miss.stdout = ""
+        git_fetch_miss.stderr = "fatal: couldn't find remote ref"
+
+        append_ok = MagicMock()
+        append_ok.returncode = 0
+        append_ok.stdout = "appended"
+        append_ok.stderr = ""
+
+        call_responses = [fetch_resp, git_fetch_miss, append_ok]
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=call_responses,
+        ):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+        captured = capsys.readouterr()
+        record_out = json.loads(captured.out)
+        assert "scenarios" in record_out
+        assert "total_steps" in record_out
+        assert "metric_version" in record_out
+        assert "AI_AGILE_STATUS: complete" in captured.err
+
+    def test_fetch_ok_show_miss_proceeds_to_append(self, capsys, monkeypatch):
+        """_ledger_has_cycle_id returns False when fetch succeeds but show fails."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "classification: enhancement"],
+        )
+
+        git_fetch_ok = MagicMock()
+        git_fetch_ok.returncode = 0
+
+        git_show_miss = MagicMock()
+        git_show_miss.returncode = 1
+        git_show_miss.stdout = ""
+        git_show_miss.stderr = "fatal: not found"
+
+        append_ok = MagicMock()
+        append_ok.returncode = 0
+        append_ok.stdout = "appended"
+        append_ok.stderr = ""
+
+        call_responses = [fetch_resp, git_fetch_ok, git_show_miss, append_ok]
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=call_responses,
+        ):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+        captured = capsys.readouterr()
+        assert "AI_AGILE_STATUS: complete" in captured.err
+
+    def test_duplicate_cycle_id_skips_append(self, capsys, monkeypatch):
+        """Scenario: Script skips the append when cycle_id already exists in the ledger."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "classification: enhancement"],
+        )
+
+        existing_cycle_id = str(
+            uuid.uuid5(CYCLE_ID_NAMESPACE, "pdd-measurements/issue-1")
+        )
+
+        git_fetch_ok = MagicMock()
+        git_fetch_ok.returncode = 0
+
+        append_calls: list = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:
+                return fetch_resp
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return git_fetch_ok
+            if isinstance(cmd, list) and cmd[:2] == ["git", "show"]:
+                git_show_hit = MagicMock()
+                git_show_hit.returncode = 0
+                git_show_hit.stdout = json.dumps({"cycle_id": existing_cycle_id}) + "\n"
+                return git_show_hit
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                append_calls.append(cmd)
+                return MagicMock(returncode=0, stdout="appended", stderr="")
+            return MagicMock(returncode=0)
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run,
+        ):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+        assert append_calls == []
+        captured = capsys.readouterr()
+        assert "already in ledger; skipping duplicate append" in captured.err
+        assert "AI_AGILE_STATUS: complete" in captured.err
+
+    def test_sub_issue_hierarchy_fields_non_null(self, monkeypatch):
+        """Scenario: Record includes hierarchy fields for a sub-issue."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "parent-issue:507", "classification: enhancement"],
+        )
+        parent_resp = MagicMock()
+        parent_resp.stdout = json.dumps({
+            "body": "",
+            "labels": [{"name": "classification: enhancement"}],
+        })
+        parent_resp.returncode = 0
+
+        append_ok = MagicMock()
+        append_ok.returncode = 0
+        append_ok.stdout = "appended"
+        append_ok.stderr = ""
+
+        written_records: list[dict] = []
+        fetch_calls: list = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:
+                fetch_calls.append(cmd)
+                if len(fetch_calls) == 1:
+                    return fetch_resp
+                return parent_resp
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return MagicMock(returncode=1)
+            if isinstance(cmd, list) and cmd[:2] == ["git", "show"]:
+                return MagicMock(returncode=1, stdout="", stderr="")
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                record_path = cmd[-1]
+                with open(record_path) as f:
+                    written_records.append(json.loads(f.read().strip()))
+                return append_ok
+            return MagicMock(returncode=0)
+
+        with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+        assert len(written_records) == 1
+        rec = written_records[0]
+        assert rec["parent_issue_number"] is not None
+        assert rec["root_issue_number"] is not None
+        assert rec["decomposition_depth"] is not None
+
+    def test_record_contains_required_fields(self, monkeypatch):
+        """Record has all required metrics fields."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "classification: enhancement"],
+        )
+        append_ok = MagicMock()
+        append_ok.returncode = 0
+        append_ok.stdout = "appended"
+        append_ok.stderr = ""
+
+        written_records: list[dict] = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:
+                return fetch_resp
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                record_path = cmd[-1]
+                with open(record_path) as f:
+                    written_records.append(json.loads(f.read().strip()))
+                return append_ok
+            return MagicMock(returncode=0)
+
+        with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "42"]
+                main()
+
+        assert len(written_records) == 1
+        rec = written_records[0]
+        required = {
+            "record_type", "github_issue_number", "timestamp_start", "timestamp_end",
+            "agent_id", "cycle_id", "duration_ms", "input_tokens", "output_tokens",
+            "retry_count", "retry_errors",
+        }
+        assert required.issubset(rec.keys())
+        assert rec["record_type"] == "pdd_measurements"
+        assert rec["github_issue_number"] == 42
+        assert rec["agent_id"] == AGENT_ID
+        assert rec["input_tokens"] == 0
+        assert rec["output_tokens"] == 0
+        assert rec["retry_count"] == 0
+        assert rec["retry_errors"] == []
