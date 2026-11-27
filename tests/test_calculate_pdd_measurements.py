@@ -454,12 +454,17 @@ class TestPipelineIntegration:
             labels=["prd-writer:approved", "classification: enhancement"],
         )
 
+        git_show_miss = MagicMock()
+        git_show_miss.returncode = 1
+        git_show_miss.stdout = ""
+        git_show_miss.stderr = "fatal: not found"
+
         append_ok = MagicMock()
         append_ok.returncode = 0
         append_ok.stdout = "appended"
         append_ok.stderr = ""
 
-        call_responses = [fetch_resp, append_ok]
+        call_responses = [fetch_resp, git_show_miss, append_ok]
 
         with patch(
             "calculate_pdd_measurements.subprocess.run",

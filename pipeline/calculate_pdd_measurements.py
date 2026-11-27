@@ -32,6 +32,7 @@ METRIC_VERSION = "pdd-measures-v1"
 AGENT_ID = "01_product_docs/pdd-measurements"
 METRICS_BRANCH = "ai-agile/metrics"
 METRICS_RECORDS_FILE = "records.jsonl"
+CYCLE_ID_NAMESPACE = uuid.UUID("f96a0519-a2fa-4d2e-a5ce-dfc64c3440ae")
 
 GHERKIN_SECTION_HEADING = "## Acceptance criteria (Gherkin)"
 USER_STORIES_HEADING_RE = re.compile(r"^#{1,6}\s+User stories\s*$", re.IGNORECASE)
@@ -259,7 +260,12 @@ def _compute_hierarchy(
         try:
             parent_issue = _fetch_issue(current_num)
         except (subprocess.CalledProcessError, RuntimeError):
-            break
+            print(
+                f"WARNING: hierarchy traversal incomplete at issue #{current_num} -- "
+                "root_issue_number and decomposition_depth may be wrong",
+                file=sys.stderr,
+            )
+            return parent_num, None, None
         parent_labels = [lbl["name"] for lbl in parent_issue.get("labels", [])]
         grandparent = _extract_parent_issue_number(parent_labels)
         if grandparent is None:
@@ -269,6 +275,27 @@ def _compute_hierarchy(
         depth += 1
 
     return parent_num, root_num, depth
+
+
+def _ledger_has_cycle_id(cycle_id: str, env: dict) -> bool:
+    """Return True if cycle_id already exists in the metrics ledger."""
+    result = subprocess.run(
+        ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
+        capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            if rec.get("cycle_id") == cycle_id:
+                return True
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return False
 
 
 def _append_metrics_record(record: dict) -> None:
@@ -307,6 +334,14 @@ def _append_metrics_record(record: dict) -> None:
     env["AI_AGILE_METRICS_BRANCH"] = METRICS_BRANCH
     env["AI_AGILE_METRICS_FILE"] = METRICS_RECORDS_FILE
     env["AI_AGILE_METRICS_COMMIT_MESSAGE"] = commit_message
+
+    cycle_id = record.get("cycle_id", "")
+    if cycle_id and _ledger_has_cycle_id(cycle_id, env):
+        print(
+            f"WARNING: cycle_id {cycle_id!r} already in ledger; skipping duplicate append",
+            file=sys.stderr,
+        )
+        return
 
     with tempfile.NamedTemporaryFile(
         "w", suffix=".jsonl", delete=False, encoding="utf-8",
@@ -379,7 +414,7 @@ def main() -> None:
         "timestamp_start": timestamp_start,
         "timestamp_end": timestamp_end,
         "agent_id": AGENT_ID,
-        "cycle_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"pdd-measurements/issue-{args.issue}")),
+        "cycle_id": str(uuid.uuid5(CYCLE_ID_NAMESPACE, f"pdd-measurements/issue-{args.issue}")),
         "duration_ms": duration_ms,
         "input_tokens": 0,
         "output_tokens": 0,
