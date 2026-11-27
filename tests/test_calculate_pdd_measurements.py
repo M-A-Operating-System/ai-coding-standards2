@@ -37,6 +37,7 @@ import sys
 import os
 import json
 import subprocess
+from unittest.mock import patch, MagicMock
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
@@ -46,6 +47,7 @@ from calculate_pdd_measurements import (
     _extract_user_stories_count,
     _parse_gherkin_section,
     _validate,
+    main,
     METRIC_VERSION,
 )
 
@@ -300,3 +302,57 @@ class TestUserStories:
 """
         count = _extract_user_stories_count(body)
         assert count == 1
+
+
+def _make_issue_response(body: str, labels: list[str] | None = None) -> MagicMock:
+    mock = MagicMock()
+    mock.stdout = json.dumps({
+        "body": body,
+        "labels": [{"name": lbl} for lbl in (labels or ["prd-writer:approved"])],
+    })
+    mock.returncode = 0
+    return mock
+
+
+_VALID_BODY = """
+## Acceptance criteria (Gherkin)
+
+#### Scenario: One step scenario
+**Given** a precondition
+"""
+
+
+class TestMainErrors:
+    def test_missing_approved_label_exits_nonzero(self):
+        mock_resp = _make_issue_response(_VALID_BODY, labels=["some-other-label"])
+        with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
+            with pytest.raises(SystemExit) as exc_info:
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+        assert exc_info.value.code != 0
+
+    def test_called_process_error_exits_nonzero(self):
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "gh", stderr="network error"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+        assert exc_info.value.code != 0
+
+    def test_missing_gherkin_section_exits_nonzero(self):
+        body_no_gherkin = "## Some other section\n\nContent without Gherkin.\n"
+        mock_resp = _make_issue_response(body_no_gherkin)
+        with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
+            with pytest.raises(SystemExit) as exc_info:
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+        assert exc_info.value.code != 0
+
+    def test_missing_repo_env_exits_nonzero(self, monkeypatch):
+        monkeypatch.delenv("REPO", raising=False)
+        with pytest.raises(SystemExit) as exc_info:
+            sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+            main()
+        assert exc_info.value.code != 0

@@ -34,6 +34,15 @@ STEP_RE = re.compile(r"^\s*\*\*(Given|When|Then|And|But)\*\*")
 SECTION_END_RE = re.compile(r"^(---+|#{1,2}\s)")
 
 
+def _gh_env() -> dict:
+    env: dict[str, str] = {}
+    for key in ("PATH", "HOME", "GH_TOKEN", "GITHUB_TOKEN"):
+        val = os.environ.get(key)
+        if val is not None:
+            env[key] = val
+    return env
+
+
 def _gh_api(path: str) -> dict:
     repo = os.environ.get("REPO", "")
     if not repo:
@@ -43,6 +52,7 @@ def _gh_api(path: str) -> dict:
         capture_output=True,
         text=True,
         check=True,
+        env=_gh_env(),
     )
     return json.loads(result.stdout)
 
@@ -203,8 +213,8 @@ def main() -> None:
 
     try:
         issue = _fetch_issue(args.issue)
-    except subprocess.CalledProcessError as exc:
-        _fail(f"failed to fetch issue #{args.issue}: {exc.stderr.strip()}")
+    except (subprocess.CalledProcessError, RuntimeError) as exc:
+        _fail(f"failed to fetch issue #{args.issue}: {exc}")
 
     labels = [lbl["name"] for lbl in issue.get("labels", [])]
     if "prd-writer:approved" not in labels:
