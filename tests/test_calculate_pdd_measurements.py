@@ -356,7 +356,8 @@ class TestMainErrors:
                 main()
         assert exc_info.value.code != 0
 
-    def test_missing_gherkin_section_exits_nonzero(self):
+    def test_missing_gherkin_section_exits_nonzero(self, monkeypatch):
+        monkeypatch.setenv("REPO", "owner/repo")
         body_no_gherkin = "## Some other section\n\nContent without Gherkin.\n"
         mock_resp = _make_issue_response(body_no_gherkin)
         with patch("calculate_pdd_measurements.subprocess.run", return_value=mock_resp):
@@ -456,17 +457,17 @@ class TestPipelineIntegration:
             labels=["prd-writer:approved", "classification: enhancement"],
         )
 
-        git_show_miss = MagicMock()
-        git_show_miss.returncode = 1
-        git_show_miss.stdout = ""
-        git_show_miss.stderr = "fatal: not found"
+        git_fetch_miss = MagicMock()
+        git_fetch_miss.returncode = 1
+        git_fetch_miss.stdout = ""
+        git_fetch_miss.stderr = "fatal: couldn't find remote ref"
 
         append_ok = MagicMock()
         append_ok.returncode = 0
         append_ok.stdout = "appended"
         append_ok.stderr = ""
 
-        call_responses = [fetch_resp, git_show_miss, append_ok]
+        call_responses = [fetch_resp, git_fetch_miss, append_ok]
 
         with patch(
             "calculate_pdd_measurements.subprocess.run",
@@ -481,6 +482,41 @@ class TestPipelineIntegration:
         assert "scenarios" in record_out
         assert "total_steps" in record_out
         assert "metric_version" in record_out
+        assert "AI_AGILE_STATUS: complete" in captured.err
+
+    def test_fetch_ok_show_miss_proceeds_to_append(self, capsys, monkeypatch):
+        """_ledger_has_cycle_id returns False when fetch succeeds but show fails."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        fetch_resp = _make_issue_response(
+            _VALID_BODY,
+            labels=["prd-writer:approved", "classification: enhancement"],
+        )
+
+        git_fetch_ok = MagicMock()
+        git_fetch_ok.returncode = 0
+
+        git_show_miss = MagicMock()
+        git_show_miss.returncode = 1
+        git_show_miss.stdout = ""
+        git_show_miss.stderr = "fatal: not found"
+
+        append_ok = MagicMock()
+        append_ok.returncode = 0
+        append_ok.stdout = "appended"
+        append_ok.stderr = ""
+
+        call_responses = [fetch_resp, git_fetch_ok, git_show_miss, append_ok]
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=call_responses,
+        ):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+        captured = capsys.readouterr()
         assert "AI_AGILE_STATUS: complete" in captured.err
 
     def test_duplicate_cycle_id_skips_append(self, capsys, monkeypatch):
@@ -549,7 +585,6 @@ class TestPipelineIntegration:
         append_ok.stderr = ""
 
         written_records: list[dict] = []
-        orig_run = subprocess.run
         fetch_calls: list = []
 
         def side_effect_run(cmd, **kwargs):
@@ -558,12 +593,16 @@ class TestPipelineIntegration:
                 if len(fetch_calls) == 1:
                     return fetch_resp
                 return parent_resp
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return MagicMock(returncode=1)
+            if isinstance(cmd, list) and cmd[:2] == ["git", "show"]:
+                return MagicMock(returncode=1, stdout="", stderr="")
             if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
                 record_path = cmd[-1]
                 with open(record_path) as f:
                     written_records.append(json.loads(f.read().strip()))
                 return append_ok
-            return orig_run(cmd, **kwargs)
+            return MagicMock(returncode=0)
 
         with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
             with patch("os.path.isfile", return_value=True):
