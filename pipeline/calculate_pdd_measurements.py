@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 import sys
+from typing import NoReturn
 
 METRIC_VERSION = "pdd-measures-v1"
 
@@ -89,7 +90,7 @@ def _extract_user_stories_count(body: str) -> int | None:
                 found_section = True
             continue
 
-        if re.match(r"^#{1,6}\s", line):
+        if re.match(r"^(---+|#{1,6}\s)", line):
             break
 
         stripped = line.lstrip("- *").strip()
@@ -187,9 +188,9 @@ def _validate(measurements: dict) -> None:
         _fail("reconciliation failed: total_steps != sum of keyword counts")
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     print(f"ERROR: {message}", file=sys.stderr)
-    print("AI_AGILE_STATUS: blocked", flush=True)
+    print("AI_AGILE_STATUS: blocked", file=sys.stderr, flush=True)
     sys.exit(1)
 
 
@@ -228,7 +229,7 @@ def main() -> None:
     measurements["metric_version"] = METRIC_VERSION
 
     print(json.dumps(measurements, indent=2))
-    print("AI_AGILE_STATUS: complete", flush=True)
+    print("AI_AGILE_STATUS: complete", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

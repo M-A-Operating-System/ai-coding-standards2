@@ -287,3 +287,16 @@ class TestUserStories:
 """
         count = _extract_user_stories_count(body)
         assert count == 0
+
+    def test_stops_at_horizontal_rule(self):
+        body = """
+## User stories
+
+- As a user I want something
+
+---
+
+- As a user I want something else (after boundary, not counted)
+"""
+        count = _extract_user_stories_count(body)
+        assert count == 1
