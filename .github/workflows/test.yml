@@ -40,6 +40,12 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
+      # poppler-utils' pdfimages: tests/test_metrics_report.py's
+      # TestWeasyPrintLayout asserts embedded PDF image counts with it
+      # (issue #748) -- not a pip package, so pip install -r requirements.txt
+      # above doesn't cover it.
+      - name: Install poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
       # Blank-line rules only -- see ruff.toml for why the selection is narrow.
       # The version is pinned because E305/E306 are preview rules: an unpinned
       # upgrade could change what preview covers and turn CI red on untouched
