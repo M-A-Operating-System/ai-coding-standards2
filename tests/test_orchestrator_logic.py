@@ -7112,3 +7112,121 @@ class TestOutcomePolicySkipsBlocked:
         assert not any(l == "pr-reviewer:failed" for l in applied), (
             "a legitimate :blocked must not be turned into :failed by outcome_policy"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression for issue #731: outcome_overridden review with no durable
+# artefact must set STATUS_FAILED rather than silently strand a review gate
+# (mirrors TestReviewOutcomeLacksDurableArtefact for the outcome_overridden
+# path in _apply_result, which previously discarded _post_artefact_if_present's
+# return value and never called the safeguard).
+# ---------------------------------------------------------------------------
+
+class TestOutcomeOverriddenEmptyArtefactFailed:
+
+    def _pr_reviewer_agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "pr-reviewer:requested"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+            review_gate=True,
+            outcome_policy={"kind": "review_findings", "schema": "pipeline/schemas/pr-review.schema.json"},
+        )
+
+    def _write_complete_with_blocking_findings(self):
+        def _effect(agent_def, work_item, dry_run, repo, attempt=0,
+                    agent_text_override=None, default_extra_tools=None, cwd=None,
+                    flow_env=None):
+            if not dry_run:
+                session_id = orch._compute_agent_session_id(agent_def, work_item, repo)
+                scratch = orch._scratch_path(session_id)
+                os.makedirs(scratch, exist_ok=True)
+                payload = {
+                    "outcome": "complete",
+                    "summary": "looks good",
+                    "undone": "",
+                    "message": "",
+                    "output": "",
+                    "verdict": "",
+                    "expected_effect": {},
+                    "label_requests": [],
+                    "review": {
+                        "head_sha": "abc123",
+                        "findings": [{
+                            "id": "RV-001",
+                            "title": "blocking defect",
+                            "category": "defect",
+                            "type": "correctness",
+                            "severity": "High",
+                            "confidence": 1.0,
+                            "evidence": "broken code",
+                            "fix": "fix it",
+                        }],
+                    },
+                }
+                with open(orch._result_file_path(scratch), "w") as f:
+                    json.dump(payload, f)
+            return AgentRunResult(success=True)
+        return _effect
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_artefact_post_failure_in_outcome_overridden_path_applies_failed(self, mock_invoke):
+        """Scenario: empty-output outcome_overridden review triggers STATUS_FAILED.
+
+        Given the orchestrator overrides complete to review (blocking findings)
+        and the rendered artefact comment fails to post
+        When _apply_result processes the step result through the outcome_overridden branch
+        Then STATUS_FAILED is applied, not :review or :blocked
+        """
+        mock_invoke.side_effect = self._write_complete_with_blocking_findings()
+        agent = self._pr_reviewer_agent()
+        gh = _make_gh_mock()
+        gh.list_comment_bodies = MagicMock(return_value=[])
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+
+        def _post_comment_fail_on_artefact(number, body):
+            if "ai-agile/artefact/v1" in body:
+                raise RuntimeError("simulated artefact post failure")
+        gh.post_comment = MagicMock(side_effect=_post_comment_fail_on_artefact)
+
+        wi = _make_work_item_with_labels(42, {"pr-reviewer:requested"})
+        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "pr-reviewer:failed" in applied, (
+            f"expected pr-reviewer:failed when artefact posting fails in "
+            f"outcome_overridden path; got: {applied}"
+        )
+        assert "pr-reviewer:review" not in applied, (
+            "outcome_overridden review with no durable artefact must not apply :review"
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_outcome_overridden_with_posted_artefact_does_not_fail(self, mock_invoke):
+        """Scenario: non-empty-output outcome_overridden review proceeds without failure.
+
+        When the artefact comment posts successfully the safeguard must not
+        apply :failed -- the outcome_overridden :review flow is preserved.
+        """
+        mock_invoke.side_effect = self._write_complete_with_blocking_findings()
+        agent = self._pr_reviewer_agent()
+        gh = _make_gh_mock()
+        gh.list_comment_bodies = MagicMock(return_value=[])
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        wi = _make_work_item_with_labels(42, {"pr-reviewer:requested"})
+        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "pr-reviewer:failed" not in applied, (
+            f"outcome_overridden review with successful artefact posting must not "
+            f"apply :failed; got: {applied}"
+        )
