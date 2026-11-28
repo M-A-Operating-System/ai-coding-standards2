@@ -45,6 +45,14 @@ PRD_WRITER_ARTEFACT_MARKER = "<!-- ai-agile/artefact/v1 by 01_product_docs/prd-w
 GHERKIN_SECTION_HEADING = "### Acceptance criteria (Gherkin)"
 USER_STORIES_HEADING_RE = re.compile(r"^#{1,6}\s+User stories\s*$", re.IGNORECASE)
 
+# Sizer's sub-issue template (.claude/agents/00_ondemand/sizer.md) always
+# writes this at two hashes, as the last of its own sections -- immediately
+# followed by prd-writer's own "###" Gherkin addition, with no "---" between
+# them. Only sizer-decomposed sub-issues carry this section at all.
+DEPENDENCIES_HEADING = "## Dependencies"
+DEPENDENCY_ISSUE_REF_RE = re.compile(r"#(\d+)")
+ANY_HEADING_RE = re.compile(r"^#{1,6}\s")
+
 SCENARIO_RE = re.compile(r"^#{1,6}\s+Scenario:\s*(.+)$")
 STEP_RE = re.compile(r"^\s*\*\*(Given|When|Then|And|But)\*\*")
 
@@ -131,6 +139,34 @@ def _extract_user_stories_count(body: str) -> int | None:
     if not found_section:
         return None
     return count
+
+
+def _extract_dependency_count(body: str) -> int | None:
+    """Count distinct '#N' issue references in '## Dependencies'.
+
+    None if the section is absent. "None -- can be delivered
+    independently." (no issue reference) correctly yields 0, not None.
+    """
+    lines = body.splitlines()
+    in_section = False
+    found_section = False
+    section_lines: list[str] = []
+
+    for line in lines:
+        if not in_section:
+            if line.strip() == DEPENDENCIES_HEADING:
+                in_section = True
+                found_section = True
+            continue
+
+        if line.strip().startswith("---") or ANY_HEADING_RE.match(line):
+            break
+        section_lines.append(line)
+
+    if not found_section:
+        return None
+    refs = DEPENDENCY_ISSUE_REF_RE.findall("\n".join(section_lines))
+    return len(set(refs))
 
 
 def _parse_gherkin_section(section: str) -> dict:
@@ -495,6 +531,7 @@ def _backfill_one_issue(issue: dict, known_cycle_ids: set) -> bool:
 
     user_stories = _extract_user_stories_count(body)
     measurements["user_stories"] = user_stories
+    measurements["dependency_count"] = _extract_dependency_count(body)
     measurements["metric_version"] = METRIC_VERSION
 
     parent_issue_number, root_issue_number, decomposition_depth = _compute_hierarchy(labels)
@@ -621,6 +658,7 @@ def main() -> None:
 
     user_stories = _extract_user_stories_count(body)
     measurements["user_stories"] = user_stories
+    measurements["dependency_count"] = _extract_dependency_count(body)
     measurements["metric_version"] = METRIC_VERSION
 
     timestamp_end = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

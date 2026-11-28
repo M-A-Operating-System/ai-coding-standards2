@@ -231,8 +231,14 @@
     "user_stories": {
       "type": ["integer", "null"],
       "minimum": 0,
-      "description": "Count of 'As a'-starting bullet lines in the '## User stories' section of the PDD; null when that section is absent (pdd_measurements records only).",
+      "description": "Count of 'As a'-starting bullet lines in the '### User stories' section of the PDD; null when that section is absent (pdd_measurements records only).",
       "business_description": "How many user stories the PDD contains, or null if the section was absent -- a measure of stakeholder-role coverage."
+    },
+    "dependency_count": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of distinct '#N' issue references in the '## Dependencies' section of the PDD; null when that section is absent (pdd_measurements records only). Only sizer-decomposed sub-issues carry this section.",
+      "business_description": "How many other issues this PDD depends on, or null if it has no Dependencies section -- a measure of coordination/blocking complexity."
     },
     "metric_version": {
       "type": ["string", "null"],
