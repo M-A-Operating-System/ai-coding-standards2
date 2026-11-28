@@ -37,6 +37,14 @@ Scripted step (issue #565): applies sizer:requested to the issue so the standalo
 
 Drafts a Product Requirements Document for an appropriately-sized issue. Triggers on sizer:complete (issue #565) rather than issue-classifier:complete directly, so build never starts while sizing is pending or in progress -- request-sizing applies sizer:requested automatically, and the standalone 00_ondemand/sizer flow must reach a terminal outcome before this step becomes eligible. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked.
 
+### `01_product_docs/pdd-measurements`
+
+- **Kind:** script
+- **Phase:** `01_product_docs`
+- **Script:** `scripts/pdd-measurements.sh`
+
+Scripted step (issue #760, part 2 of #507): runs on prd-writer:approved approval. Parses the Gherkin acceptance criteria from the approved issue, counts scenarios and step keywords, and appends one pdd_measurements record to ai-agile/metrics:records.jsonl. Emits AI_AGILE_STATUS: complete on success, blocked on malformed Gherkin or reconciliation failure. Skipped for epic/blocked issues.
+
 ### `01_product_docs/create-docs-pr`
 
 - **Kind:** script

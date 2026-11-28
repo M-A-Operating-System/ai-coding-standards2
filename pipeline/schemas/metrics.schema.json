@@ -151,6 +151,93 @@
       "type": ["string", "null"],
       "description": "The issue's classification label (e.g. 'enhancement', 'bug', 'spike') as set by 01_product_docs/issue-classifier, or null before classification runs (orchestrator-defined).",
       "business_description": "What kind of work this issue is -- the dimension the report's value-add and classification-mix ratios use to separate forward-looking work from maintenance and overhead."
+    },
+    "record_type": {
+      "type": ["string", "null"],
+      "description": "Discriminator field identifying the type of metrics record. Absent or null for standard per-invocation records; 'pdd_measurements' for PDD Gherkin measurement records written by 01_product_docs/pdd-measurements (issue #760).",
+      "business_description": "Lets consumers of records.jsonl distinguish PDD Gherkin measurement rows from standard per-invocation cost and token rows."
+    },
+    "parent_issue_number": {
+      "type": ["integer", "null"],
+      "description": "The GitHub issue number of the direct parent issue, extracted from the parent-issue:NNN label; null when the issue is a root (not a sub-issue).",
+      "business_description": "Identifies the parent issue in a decomposed hierarchy, enabling rollup of measurements across sub-issues."
+    },
+    "root_issue_number": {
+      "type": ["integer", "null"],
+      "description": "The GitHub issue number of the topmost ancestor with no parent-issue label; null when the issue is a root.",
+      "business_description": "Identifies the root (epic or top-level) issue this PDD belongs to, for cross-hierarchy rollup."
+    },
+    "decomposition_depth": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "How many levels deep this issue is in the parent chain (1 = direct child of a root, 2 = grandchild, etc.); null when the issue is a root.",
+      "business_description": "The decomposition depth of the issue within the hierarchy, useful for filtering or grouping by level."
+    },
+    "scenarios": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "The total number of Gherkin scenarios parsed from the '## Acceptance criteria (Gherkin)' section of the PDD (pdd_measurements records only).",
+      "business_description": "How many Gherkin scenarios the approved PDD contains -- a measure of specification breadth."
+    },
+    "scenario_step_counts": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "scenario_index": { "type": "integer" },
+          "scenario_title": { "type": "string" },
+          "steps": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "description": "Per-scenario breakdown: scenario_index (1-based), scenario_title, and steps count (pdd_measurements records only).",
+      "business_description": "Step counts per scenario, enabling detection of scenarios that are unusually large or small."
+    },
+    "total_steps": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Total number of Gherkin step lines (Given/When/Then/And/But) across all scenarios in the PDD (pdd_measurements records only).",
+      "business_description": "Total step count across the PDD -- a summary measure of specification detail."
+    },
+    "given_steps": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of **Given** keyword step lines across all scenarios (pdd_measurements records only).",
+      "business_description": "How many Given steps the PDD specifies -- a proxy for the number of distinct preconditions."
+    },
+    "when_steps": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of **When** keyword step lines across all scenarios (pdd_measurements records only).",
+      "business_description": "How many When steps the PDD specifies -- a proxy for the number of distinct actions or events."
+    },
+    "then_steps": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of **Then** keyword step lines across all scenarios (pdd_measurements records only).",
+      "business_description": "How many Then steps the PDD specifies -- a proxy for the number of distinct expected outcomes."
+    },
+    "and_steps": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of **And** keyword step lines across all scenarios (pdd_measurements records only).",
+      "business_description": "How many And steps the PDD contains -- continuation steps that extend a Given, When, or Then."
+    },
+    "but_steps": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of **But** keyword step lines across all scenarios (pdd_measurements records only).",
+      "business_description": "How many But steps the PDD contains -- exception or negation steps."
+    },
+    "user_stories": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Count of 'As a'-starting bullet lines in the '## User stories' section of the PDD; null when that section is absent (pdd_measurements records only).",
+      "business_description": "How many user stories the PDD contains, or null if the section was absent -- a measure of stakeholder-role coverage."
+    },
+    "metric_version": {
+      "type": ["string", "null"],
+      "description": "Schema version for the PDD measurement fields (e.g. 'pdd-measures-v1') (pdd_measurements records only).",
+      "business_description": "Versioning for the PDD measurement schema, enabling future evolution without breaking existing consumers."
     }
   },
   "derived_metrics": {
