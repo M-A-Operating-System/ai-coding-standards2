@@ -68,10 +68,13 @@ from calculate_pdd_measurements import (
     _extract_classification,
     _extract_parent_issue_number,
     _compute_hierarchy,
+    _load_all_cycle_ids,
+    _backfill_one_issue,
     main,
     METRIC_VERSION,
     AGENT_ID,
     CYCLE_ID_NAMESPACE,
+    PRD_WRITER_ARTEFACT_MARKER,
 )
 
 
@@ -660,3 +663,244 @@ class TestPipelineIntegration:
         assert rec["output_tokens"] == 0
         assert rec["retry_count"] == 0
         assert rec["retry_errors"] == []
+
+
+_ARTEFACT_COMMENT_BODY = (
+    PRD_WRITER_ARTEFACT_MARKER + "\n\nSome artefact content here."
+)
+_ARTEFACT_CREATED_AT = "2026-01-15T10:00:00Z"
+
+
+def _make_approved_issue(number: int, body: str, state: str = "open") -> dict:
+    return {
+        "number": number,
+        "state": state,
+        "body": body,
+        "labels": [{"name": "prd-writer:approved"}, {"name": "classification: enhancement"}],
+    }
+
+
+def _make_comments_response(created_at: str = _ARTEFACT_CREATED_AT) -> MagicMock:
+    mock = MagicMock()
+    mock.stdout = json.dumps([
+        {"body": _ARTEFACT_COMMENT_BODY, "created_at": created_at},
+    ])
+    mock.returncode = 0
+    return mock
+
+
+def _make_no_comments_response() -> MagicMock:
+    mock = MagicMock()
+    mock.stdout = json.dumps([{"body": "unrelated comment", "created_at": "2026-01-01T00:00:00Z"}])
+    mock.returncode = 0
+    return mock
+
+
+class TestBackfill:
+    """Realises scenarios in docs/features/pdd-measurement-backfill-mode.md."""
+
+    def test_load_all_cycle_ids_returns_set(self):
+        """_load_all_cycle_ids reads cycle IDs from the metrics ledger."""
+        cid = str(uuid.uuid5(CYCLE_ID_NAMESPACE, "pdd-measurements/issue-10"))
+        ledger_line = json.dumps({"record_type": "pdd_measurements", "cycle_id": cid})
+
+        git_fetch_ok = MagicMock(returncode=0)
+        git_show_ok = MagicMock(returncode=0, stdout=ledger_line + "\n")
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=[git_fetch_ok, git_show_ok],
+        ):
+            result = _load_all_cycle_ids({})
+
+        assert cid in result
+
+    def test_load_all_cycle_ids_fetch_fails_returns_empty(self):
+        """_load_all_cycle_ids returns empty set when git fetch fails."""
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            return_value=MagicMock(returncode=1),
+        ):
+            result = _load_all_cycle_ids({})
+        assert result == set()
+
+    def test_already_measured_skips(self, monkeypatch):
+        """Scenario: Backfill skips issues that already have a measurement record."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        issue = _make_approved_issue(10, _VALID_BODY)
+        cycle_id = str(uuid.uuid5(CYCLE_ID_NAMESPACE, "pdd-measurements/issue-10"))
+        known = {cycle_id}
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=AssertionError("should not call subprocess"),
+        ):
+            result = _backfill_one_issue(issue, known)
+
+        assert result is False
+
+    def test_timestamps_from_artefact_comment(self, monkeypatch):
+        """Scenario: Backfill records the artefact comment timestamp as both measurement timestamps."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        issue = _make_approved_issue(20, _VALID_BODY)
+        known: set = set()
+        written_records: list = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"] and "comments" in str(cmd):
+                return _make_comments_response()
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return MagicMock(returncode=1)
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                record_path = cmd[-1]
+                with open(record_path) as f:
+                    written_records.append(json.loads(f.read().strip()))
+                return MagicMock(returncode=0, stdout="appended", stderr="")
+            return MagicMock(returncode=0)
+
+        with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
+            with patch("os.path.isfile", return_value=True):
+                result = _backfill_one_issue(issue, known)
+
+        assert result is True
+        assert len(written_records) == 1
+        rec = written_records[0]
+        assert rec["timestamp_start"] == _ARTEFACT_CREATED_AT
+        assert rec["timestamp_end"] == _ARTEFACT_CREATED_AT
+
+    def test_no_artefact_comment_skips_and_logs(self, capsys, monkeypatch):
+        """Scenario: Backfill skips and logs an approved issue with no prd-writer artefact comment."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        issue = _make_approved_issue(30, _VALID_BODY)
+        known: set = set()
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            return_value=_make_no_comments_response(),
+        ):
+            import pytest
+            with pytest.raises(ValueError, match="no prd-writer artefact comment"):
+                _backfill_one_issue(issue, known)
+
+    def test_malformed_issue_continues_batch(self, monkeypatch):
+        """Scenario: Backfill continues after a malformed issue."""
+        monkeypatch.setenv("REPO", "owner/repo")
+
+        malformed_body = "## Acceptance criteria (Gherkin)\n\n#### Scenario: Empty\n"
+        good_body = _VALID_BODY
+
+        issues_data = json.dumps([
+            _make_approved_issue(40, malformed_body),
+            _make_approved_issue(41, good_body),
+        ])
+
+        approved_resp = MagicMock(returncode=0, stdout=issues_data)
+        written_records: list = []
+        comments_call_count = [0]
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:
+                url = cmd[2] if len(cmd) > 2 else ""
+                if "per_page" in url:
+                    return approved_resp
+                if "comments" in url:
+                    comments_call_count[0] += 1
+                    return _make_comments_response()
+                return MagicMock(returncode=0, stdout=json.dumps({}))
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return MagicMock(returncode=1)
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                record_path = cmd[-1]
+                with open(record_path) as f:
+                    written_records.append(json.loads(f.read().strip()))
+                return MagicMock(returncode=0, stdout="appended", stderr="")
+            return MagicMock(returncode=0)
+
+        with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--backfill"]
+                main()
+
+        assert len(written_records) == 1
+        assert written_records[0]["github_issue_number"] == 41
+
+    def test_closed_issue_measured(self, monkeypatch):
+        """Scenario: Backfill measures closed approved issues."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        issue = _make_approved_issue(50, _VALID_BODY, state="closed")
+        known: set = set()
+        written_records: list = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"] and "comments" in str(cmd):
+                return _make_comments_response()
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return MagicMock(returncode=1)
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                record_path = cmd[-1]
+                with open(record_path) as f:
+                    written_records.append(json.loads(f.read().strip()))
+                return MagicMock(returncode=0, stdout="appended", stderr="")
+            return MagicMock(returncode=0)
+
+        with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
+            with patch("os.path.isfile", return_value=True):
+                result = _backfill_one_issue(issue, known)
+
+        assert result is True
+        assert len(written_records) == 1
+
+    def test_record_has_no_forbidden_fields(self, monkeypatch):
+        """Scenario: Backfill records pass the same structural validation and no forbidden fields."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        issue = _make_approved_issue(60, _VALID_BODY)
+        known: set = set()
+        written_records: list = []
+
+        def side_effect_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["gh", "api"] and "comments" in str(cmd):
+                return _make_comments_response()
+            if isinstance(cmd, list) and cmd[:2] == ["git", "fetch"]:
+                return MagicMock(returncode=1)
+            if isinstance(cmd, list) and "append-metrics-record.sh" in str(cmd):
+                record_path = cmd[-1]
+                with open(record_path) as f:
+                    written_records.append(json.loads(f.read().strip()))
+                return MagicMock(returncode=0, stdout="appended", stderr="")
+            return MagicMock(returncode=0)
+
+        with patch("calculate_pdd_measurements.subprocess.run", side_effect=side_effect_run):
+            with patch("os.path.isfile", return_value=True):
+                _backfill_one_issue(issue, known)
+
+        assert len(written_records) == 1
+        rec = written_records[0]
+        forbidden = {"score", "index", "band", "threshold", "coefficient"}
+        assert not forbidden.intersection(rec.keys())
+        assert rec["record_type"] == "pdd_measurements"
+        assert "scenarios" in rec
+        assert "total_steps" in rec
+
+    def test_backfill_flag_absent_preserves_live_path(self, monkeypatch):
+        """Scenario: Running without --backfill preserves live pipeline behavior."""
+        monkeypatch.setenv("REPO", "owner/repo")
+        fetch_resp = _make_issue_response(
+            _VALID_BODY, labels=["prd-writer:approved", "classification: enhancement"],
+        )
+        git_fetch_miss = MagicMock(returncode=1, stdout="", stderr="")
+        append_ok = MagicMock(returncode=0, stdout="appended", stderr="")
+
+        with patch(
+            "calculate_pdd_measurements.subprocess.run",
+            side_effect=[fetch_resp, git_fetch_miss, append_ok],
+        ):
+            with patch("os.path.isfile", return_value=True):
+                sys.argv = ["calculate_pdd_measurements.py", "--issue", "1"]
+                main()
+
+    def test_missing_issue_and_no_backfill_exits_nonzero(self):
+        """--issue is required when --backfill is not specified."""
+        sys.argv = ["calculate_pdd_measurements.py"]
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code != 0

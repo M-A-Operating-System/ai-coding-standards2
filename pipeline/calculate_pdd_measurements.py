@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gherkin section parser and PDD metrics recorder (issue #759 / #760, parts 1-2 of #507).
+"""Gherkin section parser and PDD metrics recorder (issue #759 / #760 / #761, parts 1-3 of #507).
 
 Reads an issue body, locates the '## Acceptance criteria (Gherkin)' section,
 extracts scenarios and step lines, counts keywords by type, produces a
@@ -8,11 +8,17 @@ to the ai-agile/metrics ledger via scripts/append-metrics-record.sh.
 
 Usage:
     python pipeline/calculate_pdd_measurements.py --issue <N>
+    python pipeline/calculate_pdd_measurements.py --backfill
 
 The issue must carry 'prd-writer:approved'. On success, prints JSON to stdout
 and 'AI_AGILE_STATUS: complete'. On failure, prints a message to stderr and
 'AI_AGILE_STATUS: blocked'. When 'prd-writer:approved' is absent the script
 exits cleanly without appending any record.
+
+--backfill iterates all issues carrying 'prd-writer:approved' (open and closed),
+skips any that already have a pdd_measurements record in the ledger, and writes
+measurements for the rest using the prd-writer artefact comment's created_at as
+both timestamps. The operation is idempotent and safe to run alongside live runs.
 """
 
 from __future__ import annotations
@@ -33,6 +39,8 @@ AGENT_ID = "01_product_docs/pdd-measurements"
 METRICS_BRANCH = "ai-agile/metrics"
 METRICS_RECORDS_FILE = "records.jsonl"
 CYCLE_ID_NAMESPACE = uuid.UUID("f96a0519-a2fa-4d2e-a5ce-dfc64c3440ae")
+
+PRD_WRITER_ARTEFACT_MARKER = "<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->"
 
 GHERKIN_SECTION_HEADING = "## Acceptance criteria (Gherkin)"
 USER_STORIES_HEADING_RE = re.compile(r"^#{1,6}\s+User stories\s*$", re.IGNORECASE)
@@ -381,12 +389,206 @@ def _append_metrics_record(record: dict) -> None:
         )
 
 
+def _fetch_all_approved_issues() -> list:
+    """Return all issues (open and closed) carrying 'prd-writer:approved'."""
+    repo = os.environ.get("REPO", "")
+    if not repo:
+        raise RuntimeError("REPO environment variable is not set")
+    result = subprocess.run(
+        [
+            "gh", "api",
+            f"repos/{repo}/issues?labels=prd-writer%3Aapproved&state=all&per_page=100",
+            "--paginate",
+        ],
+        capture_output=True, text=True, check=True,
+        env=_gh_env(),
+    )
+    return json.loads(result.stdout)
+
+
+def _fetch_comments(issue_number: int) -> list:
+    """Return all comments for the given issue."""
+    repo = os.environ.get("REPO", "")
+    if not repo:
+        raise RuntimeError("REPO environment variable is not set")
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repo}/issues/{issue_number}/comments", "--paginate"],
+        capture_output=True, text=True, check=True,
+        env=_gh_env(),
+    )
+    return json.loads(result.stdout)
+
+
+def _load_all_cycle_ids(env: dict) -> set:
+    """Return the set of all cycle_ids present in the metrics ledger."""
+    fetch = subprocess.run(
+        ["git", "fetch", "origin", METRICS_BRANCH],
+        capture_output=True, text=True, env=env,
+    )
+    if fetch.returncode != 0:
+        return set()
+    result = subprocess.run(
+        ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
+        capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        return set()
+    cycle_ids: set = set()
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            cid = rec.get("cycle_id")
+            if cid:
+                cycle_ids.add(cid)
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return cycle_ids
+
+
+def _backfill_one_issue(issue: dict, known_cycle_ids: set) -> bool:
+    """Measure one issue for backfill. Returns True if a record was written.
+
+    Raises ValueError with a human-readable reason when the issue cannot be
+    measured (no artefact comment, malformed Gherkin, etc.). The caller is
+    responsible for catching ValueError, logging it, and continuing the batch.
+    """
+    issue_number = issue["number"]
+    cycle_id = str(uuid.uuid5(CYCLE_ID_NAMESPACE, f"pdd-measurements/issue-{issue_number}"))
+
+    if cycle_id in known_cycle_ids:
+        print(f"backfill: issue #{issue_number}: already measured, skipping", file=sys.stderr)
+        return False
+
+    try:
+        comments = _fetch_comments(issue_number)
+    except (subprocess.CalledProcessError, RuntimeError) as exc:
+        raise ValueError(f"failed to fetch comments: {exc}") from exc
+
+    artefact_created_at = None
+    for comment in comments:
+        if PRD_WRITER_ARTEFACT_MARKER in comment.get("body", ""):
+            artefact_created_at = comment["created_at"]
+            break
+
+    if artefact_created_at is None:
+        raise ValueError("no prd-writer artefact comment found")
+
+    body = issue.get("body") or ""
+    labels = [lbl["name"] for lbl in issue.get("labels", [])]
+
+    gherkin_section = _extract_gherkin_section(body)
+    if gherkin_section is None:
+        raise ValueError("no '## Acceptance criteria (Gherkin)' section")
+
+    try:
+        measurements = _parse_gherkin_section(gherkin_section)
+        _validate(measurements)
+    except SystemExit as exc:
+        raise ValueError(f"invalid gherkin (exit {exc.code})") from exc
+
+    user_stories = _extract_user_stories_count(body)
+    measurements["user_stories"] = user_stories
+    measurements["metric_version"] = METRIC_VERSION
+
+    parent_issue_number, root_issue_number, decomposition_depth = _compute_hierarchy(labels)
+    classification = _extract_classification(labels)
+
+    record: dict = {
+        "record_type": "pdd_measurements",
+        "github_issue_number": issue_number,
+        "timestamp_start": artefact_created_at,
+        "timestamp_end": artefact_created_at,
+        "agent_id": AGENT_ID,
+        "cycle_id": cycle_id,
+        "duration_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+        "classification": classification,
+    }
+    if parent_issue_number is not None:
+        record["parent_issue_number"] = parent_issue_number
+        record["root_issue_number"] = root_issue_number
+        record["decomposition_depth"] = decomposition_depth
+    else:
+        record["parent_issue_number"] = None
+        record["root_issue_number"] = None
+        record["decomposition_depth"] = None
+    record.update(measurements)
+
+    try:
+        _append_metrics_record(record)
+    except RuntimeError as exc:
+        raise ValueError(f"failed to write metrics record: {exc}") from exc
+
+    known_cycle_ids.add(cycle_id)
+    return True
+
+
+def _run_backfill() -> None:
+    """Run the backfill pass over all prd-writer:approved issues."""
+    repo = os.environ.get("REPO", "")
+    if not repo:
+        _fail("REPO environment variable is not set")
+
+    env = _gh_env()
+
+    print("backfill: loading existing cycle IDs from ledger", file=sys.stderr)
+    known_cycle_ids = _load_all_cycle_ids(env)
+    print(f"backfill: {len(known_cycle_ids)} existing cycle IDs loaded", file=sys.stderr)
+
+    try:
+        issues = _fetch_all_approved_issues()
+    except (subprocess.CalledProcessError, RuntimeError) as exc:
+        _fail(f"failed to fetch approved issues: {exc}")
+
+    print(f"backfill: {len(issues)} approved issues found", file=sys.stderr)
+
+    written = 0
+    skipped = 0
+
+    for issue in issues:
+        issue_number = issue["number"]
+        try:
+            did_write = _backfill_one_issue(issue, known_cycle_ids)
+            if did_write:
+                print(f"backfill: issue #{issue_number}: measured", file=sys.stderr)
+                written += 1
+            else:
+                skipped += 1
+        except (ValueError, RuntimeError) as exc:
+            print(f"backfill: issue #{issue_number}: skipped ({exc})", file=sys.stderr)
+            skipped += 1
+
+    print(
+        f"backfill: complete: written={written} skipped={skipped}",
+        file=sys.stderr,
+    )
+    print("AI_AGILE_STATUS: complete", file=sys.stderr, flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Parse Gherkin section from an issue and write PDD measurements."
     )
-    parser.add_argument("--issue", type=int, required=True, help="GitHub issue number")
+    parser.add_argument("--issue", type=int, help="GitHub issue number")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Retroactively measure all prd-writer:approved issues not yet in the ledger",
+    )
     args = parser.parse_args()
+
+    if args.backfill:
+        _run_backfill()
+        return
+
+    if args.issue is None:
+        parser.error("--issue is required unless --backfill is specified")
 
     timestamp_start = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     start_ms = time.monotonic()
