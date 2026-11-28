@@ -4,7 +4,7 @@ Realises the Gherkin scenarios in
 docs/features/gherkin-parser-section-extraction-and-step-counting.md:
 
   Scenario: Parser produces validated measurement object for well-formed input
-    -> TestWellFormedInput.test_ten_fields_present
+    -> TestWellFormedInput.test_eleven_fields_present
     -> TestWellFormedInput.test_reconciliation_checks_pass
     -> TestWellFormedInput.test_metric_version
 
@@ -63,6 +63,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 from calculate_pdd_measurements import (
     _extract_gherkin_section,
     _extract_user_stories_count,
+    _extract_dependency_count,
     _parse_gherkin_section,
     _validate,
     _extract_classification,
@@ -223,14 +224,16 @@ def _parse_body(body: str) -> dict:
 
 
 class TestWellFormedInput:
-    def test_ten_fields_present(self):
+    def test_eleven_fields_present(self):
         result = _parse_body(BODY_TWO_SCENARIOS)
         result["user_stories"] = None
+        result["dependency_count"] = None
         result["metric_version"] = METRIC_VERSION
         expected_fields = {
             "scenarios", "scenario_step_counts", "total_steps",
             "given_steps", "when_steps", "then_steps",
-            "and_steps", "but_steps", "user_stories", "metric_version",
+            "and_steps", "but_steps", "user_stories", "dependency_count",
+            "metric_version",
         }
         assert set(result.keys()) == expected_fields
 
@@ -392,6 +395,65 @@ class TestUserStories:
 """
         count = _extract_user_stories_count(body)
         assert count == 1
+
+
+class TestDependencyCount:
+    def test_none_phrasing_yields_zero(self):
+        body = """
+## Dependencies
+
+None -- can be delivered independently.
+"""
+        assert _extract_dependency_count(body) == 0
+
+    def test_single_dependency_counted(self):
+        body = """
+## Dependencies
+
+Depends on #760 -- must be merged before this one starts.
+"""
+        assert _extract_dependency_count(body) == 1
+
+    def test_absent_section_is_null(self):
+        body = """
+## Problem Statement
+
+No Dependencies section at all.
+"""
+        assert _extract_dependency_count(body) is None
+
+    def test_duplicate_reference_deduped(self):
+        body = """
+## Dependencies
+
+Depends on #760 -- see also #760 for context.
+"""
+        assert _extract_dependency_count(body) == 1
+
+    def test_stops_at_next_heading(self):
+        body = """
+## Dependencies
+
+Depends on #760.
+
+### Acceptance criteria (Gherkin)
+
+#### Scenario: Not a dependency
+**Given** issue #999 mentioned in an unrelated scenario
+"""
+        assert _extract_dependency_count(body) == 1
+
+    def test_stops_at_horizontal_rule(self):
+        body = """
+## Dependencies
+
+Depends on #760.
+
+---
+
+Depends on #999 (after boundary, not counted).
+"""
+        assert _extract_dependency_count(body) == 1
 
 
 def _make_issue_response(body: str, labels: list[str] | None = None) -> MagicMock:

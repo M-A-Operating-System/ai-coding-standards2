@@ -3,7 +3,7 @@
 ## Scenario: Parser produces validated measurement object for well-formed input
 **Given** an issue body containing a `### Acceptance criteria (Gherkin)` section with two named scenarios each having multiple step lines
 **When** `python pipeline/calculate_pdd_measurements.py --issue <N>` is called
-**Then** the JSON output contains exactly the ten fields with correct types, `metric_version` equals `pdd-measures-v1`, `scenarios` equals `len(scenario_step_counts)`, `total_steps` equals the sum of `scenario_step_counts`, and `total_steps` equals `given_steps + when_steps + then_steps + and_steps + but_steps`
+**Then** the JSON output contains exactly the eleven fields with correct types, `metric_version` equals `pdd-measures-v1`, `scenarios` equals `len(scenario_step_counts)`, `total_steps` equals the sum of `scenario_step_counts`, and `total_steps` equals `given_steps + when_steps + then_steps + and_steps + but_steps`
 
 ## Scenario: Keyword counts include step lines with leading whitespace
 **Given** an issue body whose Gherkin section contains step lines with leading whitespace before the `**Given**`, `**When**`, `**Then**`, `**And**`, or `**But**` keyword
