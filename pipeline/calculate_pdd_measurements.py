@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gherkin section parser and PDD metrics recorder (issue #759 / #760 / #761, parts 1-3 of #507).
 
-Reads an issue body, locates the '## Acceptance criteria (Gherkin)' section,
+Reads an issue body, locates the '### Acceptance criteria (Gherkin)' section,
 extracts scenarios and step lines, counts keywords by type, produces a
 validated raw measurement JSON object, and appends one pdd_measurements record
 to the ai-agile/metrics ledger via scripts/append-metrics-record.sh.
@@ -42,13 +42,17 @@ CYCLE_ID_NAMESPACE = uuid.UUID("f96a0519-a2fa-4d2e-a5ce-dfc64c3440ae")
 
 PRD_WRITER_ARTEFACT_MARKER = "<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->"
 
-GHERKIN_SECTION_HEADING = "## Acceptance criteria (Gherkin)"
+GHERKIN_SECTION_HEADING = "### Acceptance criteria (Gherkin)"
 USER_STORIES_HEADING_RE = re.compile(r"^#{1,6}\s+User stories\s*$", re.IGNORECASE)
 
 SCENARIO_RE = re.compile(r"^#{1,6}\s+Scenario:\s*(.+)$")
 STEP_RE = re.compile(r"^\s*\*\*(Given|When|Then|And|But)\*\*")
 
-SECTION_END_RE = re.compile(r"^(---+|#{1,2}\s)")
+# prd-writer (Step 6b, Step 7d) always nests this section at three hashes,
+# one level under its own "## PRD" / pre-existing issue heading -- so the
+# section ends at the next sibling "###" heading (e.g. "### Out of scope"),
+# not just "##"-or-higher.
+SECTION_END_RE = re.compile(r"^(---+|#{1,3}\s)")
 
 
 def _gh_env() -> dict:
@@ -79,9 +83,9 @@ def _fetch_issue(issue_number: int) -> dict:
 
 
 def _extract_gherkin_section(body: str) -> str | None:
-    """Return the text of the '## Acceptance criteria (Gherkin)' section.
+    """Return the text of the '### Acceptance criteria (Gherkin)' section.
 
-    Section ends at the first '---' horizontal rule or '##'-or-higher heading
+    Section ends at the first '---' horizontal rule or '###'-or-higher heading
     that follows the section heading.
     """
     lines = body.splitlines()
@@ -104,7 +108,7 @@ def _extract_gherkin_section(body: str) -> str | None:
 
 
 def _extract_user_stories_count(body: str) -> int | None:
-    """Count 'As a'-starting bullets in '## User stories'. None if absent."""
+    """Count 'As a'-starting bullets in '### User stories'. None if absent."""
     lines = body.splitlines()
     in_section = False
     count = 0
@@ -117,7 +121,7 @@ def _extract_user_stories_count(body: str) -> int | None:
                 found_section = True
             continue
 
-        if re.match(r"^(---+|#{1,6}\s)", line):
+        if SECTION_END_RE.match(line):
             break
 
         stripped = line.lstrip("- *").strip()
@@ -481,7 +485,7 @@ def _backfill_one_issue(issue: dict, known_cycle_ids: set) -> bool:
 
     gherkin_section = _extract_gherkin_section(body)
     if gherkin_section is None:
-        raise ValueError("no '## Acceptance criteria (Gherkin)' section")
+        raise ValueError("no '### Acceptance criteria (Gherkin)' section")
 
     try:
         measurements = _parse_gherkin_section(gherkin_section)
@@ -609,7 +613,7 @@ def main() -> None:
     gherkin_section = _extract_gherkin_section(body)
     if gherkin_section is None:
         _fail(
-            f"issue #{args.issue} has no '## Acceptance criteria (Gherkin)' section"
+            f"issue #{args.issue} has no '### Acceptance criteria (Gherkin)' section"
         )
 
     measurements = _parse_gherkin_section(gherkin_section)

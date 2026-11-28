@@ -176,7 +176,7 @@
     "scenarios": {
       "type": ["integer", "null"],
       "minimum": 0,
-      "description": "The total number of Gherkin scenarios parsed from the '## Acceptance criteria (Gherkin)' section of the PDD (pdd_measurements records only).",
+      "description": "The total number of Gherkin scenarios parsed from the '### Acceptance criteria (Gherkin)' section of the PDD (pdd_measurements records only).",
       "business_description": "How many Gherkin scenarios the approved PDD contains -- a measure of specification breadth."
     },
     "scenario_step_counts": {

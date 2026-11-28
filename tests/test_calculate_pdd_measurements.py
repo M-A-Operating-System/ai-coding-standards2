@@ -4,7 +4,7 @@ Realises the Gherkin scenarios in
 docs/features/gherkin-parser-section-extraction-and-step-counting.md:
 
   Scenario: Parser produces validated measurement object for well-formed input
-    -> TestWellFormedInput.test_nine_fields_present
+    -> TestWellFormedInput.test_ten_fields_present
     -> TestWellFormedInput.test_reconciliation_checks_pass
     -> TestWellFormedInput.test_metric_version
 
@@ -79,7 +79,7 @@ from calculate_pdd_measurements import (
 
 
 BODY_TWO_SCENARIOS = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: First scenario
 **Given** some precondition
@@ -94,28 +94,28 @@ BODY_TWO_SCENARIOS = """
 """
 
 BODY_WITH_USER_STORIES = """
-## User stories
+### User stories
 
 - As a developer I want to run the parser
 - As an operator I want to get measurements
 - As a user I want correct output
 - Not matching bullet
 
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: One step scenario
 **Given** a precondition
 """
 
 BODY_NO_USER_STORIES = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: One step scenario
 **Given** a precondition
 """
 
 BODY_AFTER_HORIZONTAL_RULE = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: Before boundary
 **Given** counted step
@@ -127,7 +127,7 @@ BODY_AFTER_HORIZONTAL_RULE = """
 """
 
 BODY_AFTER_HEADING = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: Before boundary
 **Given** counted step
@@ -138,8 +138,53 @@ BODY_AFTER_HEADING = """
 **Given** not counted
 """
 
+BODY_AFTER_SIBLING_HEADING = """
+### Acceptance criteria (Gherkin)
+
+#### Scenario: Before boundary
+**Given** counted step
+
+### Out of scope
+
+#### Scenario: After boundary
+**Given** not counted
+"""
+
+# Shaped like a real prd-writer PRD (Step 6b): "## PRD" with every subsection,
+# including "### Acceptance criteria (Gherkin)", nested one level under it.
+BODY_REAL_PRD_SHAPED = """
+## PRD — Example feature
+
+### Release Notes
+
+Adds an example feature.
+
+### Problem
+
+Users cannot do the example thing.
+
+### Goal
+
+Users can do the example thing.
+
+### User stories
+
+- As a user, I want the example thing, so that I benefit.
+
+### Acceptance criteria (Gherkin)
+
+#### Scenario: Example thing works
+**Given** a user on the page
+**When** they do the example thing
+**Then** it succeeds
+
+### Out of scope
+
+Omitted.
+"""
+
 BODY_FENCED_CODE = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: Real steps only
 **Given** real step
@@ -151,7 +196,7 @@ BODY_FENCED_CODE = """
 """
 
 BODY_ZERO_STEP_SCENARIO = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: Empty scenario
 
@@ -160,7 +205,7 @@ BODY_ZERO_STEP_SCENARIO = """
 """
 
 BODY_LEADING_WHITESPACE = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: Whitespace scenario
   **Given** step with leading spaces
@@ -178,7 +223,7 @@ def _parse_body(body: str) -> dict:
 
 
 class TestWellFormedInput:
-    def test_nine_fields_present(self):
+    def test_ten_fields_present(self):
         result = _parse_body(BODY_TWO_SCENARIOS)
         result["user_stories"] = None
         result["metric_version"] = METRIC_VERSION
@@ -269,6 +314,25 @@ class TestSectionBoundary:
         assert result["scenario_step_counts"][0]["scenario_title"] == "Before boundary"
         assert result["total_steps"] == 1
 
+    def test_stops_at_sibling_heading_same_level(self):
+        """Regression: prd-writer's real sections are siblings at the same
+        '###' level (e.g. '### Out of scope' after '### Acceptance criteria
+        (Gherkin)'), not a '##'-or-higher heading."""
+        result = _parse_body(BODY_AFTER_SIBLING_HEADING)
+        assert result["scenarios"] == 1
+        assert result["scenario_step_counts"][0]["scenario_title"] == "Before boundary"
+
+    def test_real_prd_shaped_body(self):
+        """Regression: prd-writer's actual output nests every section,
+        including Acceptance criteria (Gherkin), at '###' under '## PRD'."""
+        section = _extract_gherkin_section(BODY_REAL_PRD_SHAPED)
+        assert section is not None
+        result = _parse_gherkin_section(section)
+        _validate(result)
+        assert result["scenarios"] == 1
+        assert result["total_steps"] == 3
+        assert _extract_user_stories_count(BODY_REAL_PRD_SHAPED) == 1
+
     def test_no_section_returns_none(self):
         body = "## Some Other Section\n\n#### Scenario: Foo\n**Given** bar\n"
         assert _extract_gherkin_section(body) is None
@@ -308,7 +372,7 @@ class TestUserStories:
 
     def test_non_matching_bullets_not_counted(self):
         body = """
-## User stories
+### User stories
 
 - Not matching
 - Also not matching
@@ -318,7 +382,7 @@ class TestUserStories:
 
     def test_stops_at_horizontal_rule(self):
         body = """
-## User stories
+### User stories
 
 - As a user I want something
 
@@ -341,7 +405,7 @@ def _make_issue_response(body: str, labels: list[str] | None = None) -> MagicMoc
 
 
 _VALID_BODY = """
-## Acceptance criteria (Gherkin)
+### Acceptance criteria (Gherkin)
 
 #### Scenario: One step scenario
 **Given** a precondition
